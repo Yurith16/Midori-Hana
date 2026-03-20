@@ -1,0 +1,13 @@
+{
+  "name": "whatsapp-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@neoxr/wb": "^6.0.0-rc.35",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
