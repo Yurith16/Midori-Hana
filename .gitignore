@@ -1,0 +1,124 @@
+# Dependencias
+node_modules/
+package-lock.json
+yarn.lock
+
+# Sesión y datos
+session/
+creds.json
+auth_info.json
+*.pem
+*.key
+*.crt
+
+# Archivos temporales
+tmp/
+temp/
+*.tmp
+*.temp
+*.log
+logs/
+
+# Base de datos (si usas SQLite, etc.)
+*.db
+*.sqlite
+*.sqlite3
+database/*.json
+database/dbgrupos/
+
+# Archivos de entorno
+.env
+.env.local
+.env.production
+.env.development
+
+# IDE y editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-*
+*.sublime-workspace
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos de backup
+*.bak
+*.backup
+*.old
+
+# Archivos de caché
+.cache/
+.cache-*
+*.cache
+
+# Archivos de prueba
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Archivos de cobertura
+coverage/
+.nyc_output/
+
+# Archivos de construcción
+dist/
+build/
+out/
+
+# Archivos de ejecutables
+yt-dlp
+ffmpeg
+ffprobe
+*.exe
+*.dll
+
+# Archivos de YouTube
+*.mp3
+*.mp4
+*.webm
+
+# Archivos de media descargados
+downloads/
+media/
+*.mp3
+*.mp4
+*.webm
+*.jpg
+*.jpeg
+*.png
+
+# Configuración personal
+config.local.js
+config.dev.js
+config.prod.js
+
+# Archivos de logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de entorno de ejecución
+.pid
+*.pid
+
+# Archivos de secretos
+*.p12
+*.pfx
+*.pem
+secrets/
+keys/
+
+# Archivos de datos sensibles
+*.json
+!package.json
+!config.js
+!package-lock.json
