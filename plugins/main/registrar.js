@@ -1,0 +1,50 @@
+import { getRealJid, cleanNumber } from '../../utils/jid.js'
+import { registerUser, getUser } from '../../database/db.js'
+import config from '../../config.js'
+
+export default {
+  command: ['register', 'reg'],
+  group: false,
+  owner: false,
+
+  async execute(sock, msg, { args, from, sender }) {
+    const userId = msg.key.participant || from
+    const realJid = await getRealJid(sock, userId, msg)
+    const realNumber = cleanNumber(realJid)
+    
+    const user = getUser(realNumber)
+    
+    // Verificar si ya está registrado
+    if (user.name && user.age) {
+      await sock.sendMessage(from, { 
+        text: `> ✅ Ya estás registrado ${user.name} (${user.age} años)\n\n> Para actualizar tus datos usa: .update <nombre> <edad>` 
+      }, { quoted: msg })
+      return
+    }
+    
+    // Si no hay argumentos, mostrar ayuda
+    if (!args[0]) {
+      await sock.sendMessage(from, { 
+        text: `> ¿Qué datos deseas registrar? 🍃\n\n> Ejemplo: .register Juan 25` 
+      }, { quoted: msg })
+      return
+    }
+    
+    const name = args[0]
+    const age = parseInt(args[1])
+    
+    if (!name || !age || isNaN(age) || age < 1 || age > 120) {
+      await sock.sendMessage(from, { 
+        text: `> ❌ Formato incorrecto\n\n> Usa: .register <nombre> <edad>\n> Ejemplo: .register Juan 25` 
+      }, { quoted: msg })
+      return
+    }
+    
+    await registerUser(realNumber, name, age)
+    
+    await sock.sendMessage(from, { 
+      text: `> ✅ *Registro completado*\n\n> 👤 Nombre: ${name}\n> 🎂 Edad: ${age} años\n> 🍃 Bienvenido a ${config.botName}` 
+    }, { quoted: msg })
+    await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
+  }
+}

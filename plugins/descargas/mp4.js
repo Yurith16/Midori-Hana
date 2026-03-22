@@ -1,35 +1,37 @@
-import fg from 'fg-senna'
-import yts from 'yt-search'
 import axios from 'axios'
+import yts from 'yt-search'
 import config from '../../config.js'
 
 const activeUsers = new Map()
 
-// APIs de respaldo
-const backupApis = [
+// Función para probar APIs en orden
+const apis = [
   {
+    name: 'EliteProTech',
     get: async (url) => {
       const res = await axios.get(`https://eliteprotech-apis.zone.id/ytdown?url=${encodeURIComponent(url)}&format=mp4`, { timeout: 30000 })
       if (res.data?.success && res.data?.downloadURL) {
-        return { dl_url: res.data.downloadURL, title: res.data.title, thumb: res.data.thumbnail }
+        return { download: res.data.downloadURL, title: res.data.title }
       }
       throw new Error('No disponible')
     }
   },
   {
+    name: 'Yupra',
     get: async (url) => {
       const res = await axios.get(`https://api.yupra.my.id/api/downloader/ytmp4?url=${encodeURIComponent(url)}`, { timeout: 30000 })
       if (res.data?.success && res.data?.data?.download_url) {
-        return { dl_url: res.data.data.download_url, title: res.data.data.title, thumb: res.data.data.thumbnail }
+        return { download: res.data.data.download_url, title: res.data.data.title, thumbnail: res.data.data.thumbnail }
       }
       throw new Error('No disponible')
     }
   },
   {
+    name: 'Okatsu',
     get: async (url) => {
       const res = await axios.get(`https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(url)}`, { timeout: 30000 })
       if (res.data?.result?.mp4) {
-        return { dl_url: res.data.result.mp4, title: res.data.result.title, thumb: res.data.result.thumbnail }
+        return { download: res.data.result.mp4, title: res.data.result.title }
       }
       throw new Error('No disponible')
     }
@@ -37,7 +39,7 @@ const backupApis = [
 ]
 
 export default {
-  command: ['play2', 'ytmp4', 'ytv', 'fgmp4'],
+  command: ['mp4', 'video'],
   group: false,
   owner: false,
 
@@ -61,6 +63,7 @@ export default {
     try {
       let videoUrl = args[0]
       let finalUrl = videoUrl
+      let videoTitle = ''
       
       // Si no es URL de YouTube, buscar
       if (!videoUrl.match(/youtu/gi)) {
@@ -71,59 +74,46 @@ export default {
         
         videoUrl = search.videos[0].url
         finalUrl = videoUrl
+        videoTitle = search.videos[0].title
       }
       
-      await sock.sendMessage(from, { text: `> 📥 Obteniendo información...`, edit: processingMsg.key })
+      await sock.sendMessage(from, { text: `> 📥 Obteniendo video...`, edit: processingMsg.key })
       
-      let res = null
-      let usedQuality = null
+      // Probar APIs en orden
+      let result = null
+      let usedApi = null
       
-      // Intentar con fg-senna primero
-      try {
-        const qualities = ['360p', '480p', '720p', '240p', '144p', '8p']
-        for (const q of qualities) {
-          try {
-            const result = await fg.ytv(videoUrl, q)
-            if (result && result.dl_url) {
-              res = result
-              usedQuality = q
-              break
-            }
-          } catch (err) {}
-        }
-      } catch (err) {}
-      
-      // Si fg falla, usar APIs de respaldo
-      if (!res || !res.dl_url) {
-        for (const api of backupApis) {
-          try {
-            const result = await api.get(videoUrl)
-            if (result && result.dl_url) {
-              res = result
-              usedQuality = 'API'
-              break
-            }
-          } catch (err) {}
+      for (const api of apis) {
+        try {
+          result = await api.get(videoUrl)
+          usedApi = api.name
+          console.log(`✅ ${usedApi} funcionó`)
+          break
+        } catch (err) {
+          console.log(`❌ ${api.name} falló: ${err.message}`)
         }
       }
       
-      if (!res || !res.dl_url) {
+      if (!result || !result.download) {
         throw new Error('No se pudo obtener el video')
       }
       
-      const { title, dl_url, thumb } = res
-      const sizeB = res.sizeB || 0
-      const sizeMB = (sizeB / 1024 / 1024).toFixed(2)
+      const title = result.title || videoTitle || 'YouTube Video'
+      const downloadUrl = result.download
       
-      if (sizeB > 400 * 1024 * 1024) {
+      // Verificar tamaño
+      const head = await axios.head(downloadUrl, { timeout: 10000 }).catch(() => null)
+      const sizeMB = head?.headers?.['content-length'] ? (parseInt(head.headers['content-length']) / 1024 / 1024).toFixed(2) : '?'
+      
+      if (parseInt(head?.headers?.['content-length']) > 400 * 1024 * 1024) {
         await sock.sendMessage(from, { text: `> ⚠️ Video demasiado grande (${sizeMB}MB). Límite 400MB`, edit: processingMsg.key })
         return
       }
       
-      await sock.sendMessage(from, { text: `> 📤 Enviando video...`, edit: processingMsg.key })
+      await sock.sendMessage(from, { text: `> 📤 Enviando video (${sizeMB}MB)...`, edit: processingMsg.key })
       
       await sock.sendMessage(from, {
-        document: { url: dl_url },
+        video: { url: downloadUrl },
         mimetype: 'video/mp4',
         fileName: `${title.substring(0, 50).replace(/[<>:"/\\|?*]/g, '')}.mp4`,
         caption: `${finalUrl}`,
@@ -131,7 +121,7 @@ export default {
           externalAdReply: {
             title: `🍃 ${config.botName}`,
             body: title,
-            thumbnailUrl: thumb,
+            thumbnailUrl: result.thumbnail || '',
             sourceUrl: finalUrl,
             mediaType: 1,
             renderLargerThumbnail: true

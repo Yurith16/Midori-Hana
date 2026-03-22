@@ -1,66 +1,41 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import config from './config.js'
+//import { getGroupConfig, loadDatabase } from './database/db.js'
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logPlugin, logMessage, logEvent } from './utils/logger.js'
+import { watchPlugins } from './utils/pluginWatcher.js'
+import { getGroupConfig, loadDatabase } from './database/db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const commands = new Map()
-const userNames = new Map()
+let config = null
+let commands = new Map()
 
-// Verificar owner (async)
-async function isOwner(sock, sender, msg, fromMe) {
-  if (fromMe) return true
-  
-  let realNumber = sender.split('@')[0]
-  try {
-    const realJid = await getRealJid(sock, sender, msg)
-    realNumber = cleanNumber(realJid)
-  } catch {}
-  
-  return config.ownerNumbers.some(owner => {
-    const cleanOwner = owner.split('@')[0]
-    return realNumber === cleanOwner
-  })
-}
+// Cargar DB
+await loadDatabase()
 
-// Obtener nombre del grupo
-async function getGroupName(sock, groupId) {
+async function reloadConfig() {
   try {
-    const metadata = await sock.groupMetadata(groupId)
-    return metadata.subject
-  } catch {
-    return null
+    const newConfig = await import(`./config.js?update=${Date.now()}`)
+    config = newConfig.default
+    logEvent('Configuración', 'Recargada')
+  } catch (err) {
+    logError(err, 'Recargando config')
   }
 }
 
-// Obtener nombre de usuario
-async function getUserName(sock, userId, pushName = null) {
-  if (pushName) {
-    userNames.set(userId, pushName)
-    return pushName
-  }
-  if (userNames.has(userId)) return userNames.get(userId)
+await reloadConfig()
 
-  let name = userId.split('@')[0]
-  try {
-    const contact = await sock.getContact(userId)
-    name = contact.notify || contact.name || name
-  } catch {}
-  userNames.set(userId, name)
-  return name
-}
+fs.watch(path.join(__dirname, 'config.js'), () => reloadConfig())
 
-// Cargar plugins
-async function loadCommands() {
+async function reloadPlugins() {
+  logEvent('Plugins', 'Recargando...')
+  commands.clear()
+  
   const pluginsDir = path.join(__dirname, 'plugins')
-  if (!fs.existsSync(pluginsDir)) {
-    fs.mkdirSync(pluginsDir, { recursive: true })
-    return
-  }
+  if (!fs.existsSync(pluginsDir)) return
 
   async function scanDir(dir) {
     const files = fs.readdirSync(dir)
@@ -71,75 +46,197 @@ async function loadCommands() {
         await scanDir(fullPath)
       } else if (file.endsWith('.js')) {
         try {
-          const plugin = await import(`file://${fullPath}`)
+          const plugin = await import(`file://${fullPath}?update=${Date.now()}`)
           const cmd = plugin.default
-          if (cmd && cmd.command) {
-            const cmdNames = Array.isArray(cmd.command) ? cmd.command : [cmd.command]
-            cmdNames.forEach(name => commands.set(name, cmd))
-            logPlugin(cmdNames.join(', '))
+          if (cmd?.command) {
+            const names = Array.isArray(cmd.command) ? cmd.command : [cmd.command]
+            names.forEach(name => commands.set(name, cmd))
           }
         } catch (err) {
-          logError(err, `Cargando ${file}`)
+          logError(err, file)
         }
       }
     }
   }
   await scanDir(pluginsDir)
-  logEvent('Comandos cargados', `${commands.size} disponibles`)
+  logEvent('Plugins', `${commands.size} disponibles`)
 }
 
-// Handler principal
-export async function handleMessage(sock, msg, store) {
-  try {
-    const messageText = msg.message?.conversation || 
-                        msg.message?.extendedTextMessage?.text || ''
+watchPlugins(() => reloadPlugins())
 
+const userNames = new Map()
+const userCommands = new Map()
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [id, data] of userCommands) {
+    if (now - data.timestamp > config?.spamTime) userCommands.delete(id)
+  }
+}, 60000)
+
+async function isOwner(sock, sender, msg, fromMe) {
+  if (fromMe) return true
+  let num = sender.split('@')[0]
+  try {
+    const real = await getRealJid(sock, sender, msg)
+    num = cleanNumber(real)
+  } catch {}
+  return config?.ownerNumbers?.some(o => cleanNumber(o) === num) || false
+}
+
+async function isGroupAdmin(sock, groupId, userId) {
+  try {
+    const meta = await sock.groupMetadata(groupId)
+    const userNum = cleanNumber(userId)
+    return meta.participants.some(p => cleanNumber(p.id) === userNum && (p.admin === 'admin' || p.admin === 'superadmin'))
+  } catch { return false }
+}
+
+async function getGroupName(sock, groupId) {
+  try {
+    const meta = await sock.groupMetadata(groupId)
+    return meta.subject
+  } catch { return null }
+}
+
+async function getUserName(sock, userId, pushName = null) {
+  if (pushName) {
+    userNames.set(userId, pushName)
+    return pushName
+  }
+  if (userNames.has(userId)) return userNames.get(userId)
+  let name = userId.split('@')[0]
+  try {
+    const contact = await sock.getContact(userId)
+    name = contact.notify || contact.name || name
+  } catch {}
+  userNames.set(userId, name)
+  return name
+}
+
+async function loadCommands() {
+  const dir = path.join(__dirname, 'plugins')
+  if (!fs.existsSync(dir)) return
+
+  async function scan(d) {
+    const files = fs.readdirSync(d)
+    for (const file of files) {
+      const full = path.join(d, file)
+      const stat = fs.statSync(full)
+      if (stat.isDirectory()) {
+        await scan(full)
+      } else if (file.endsWith('.js')) {
+        try {
+          const plugin = await import(`file://${full}`)
+          const cmd = plugin.default
+          if (cmd?.command) {
+            const names = Array.isArray(cmd.command) ? cmd.command : [cmd.command]
+            names.forEach(n => commands.set(n, cmd))
+          }
+        } catch (err) {
+          logError(err, file)
+        }
+      }
+    }
+  }
+  await scan(dir)
+  logEvent('Comandos', `${commands.size} disponibles`)
+}
+
+// Obtener hora actual de Honduras
+function getHondurasHour() {
+  const now = new Date()
+  const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
+  return hondurasTime.getHours()
+}
+
+export async function handleMessage(sock, msg, store) {
+  if (!config) return
+  
+  try {
+    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
     const from = msg.key.remoteJid
+    if (!from) return
+    
     const isGroup = from.endsWith('@g.us')
     const sender = msg.key.participant || from
-    const fromMe = msg.key.fromMe || false
-    const isUserOwner = await isOwner(sock, sender, msg, fromMe)
-    const userName = msg.pushName || null
+    const isUserOwner = await isOwner(sock, sender, msg, msg.key.fromMe)
+    const userName = msg.pushName
 
-    // Auto-read para TODOS los mensajes
+   // Control de horarios (Honduras)
+const currentHour = getHondurasHour()
+const isActiveHour = currentHour >= config.activeHours.start && currentHour < config.activeHours.end
+
+if (!isActiveHour && !isUserOwner) {
+  // Obtener hora actual formateada
+  const now = new Date()
+  const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
+  const horaFormateada = hondurasTime.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit' })
+  
+  const mensaje = `${config.offlineMessage}\n\n> Bot disponible de ${config.activeHours.start}:00 a ${config.activeHours.end}:00\n> Hora actual en Honduras: ${horaFormateada}`
+  
+  await sock.sendMessage(from, { text: mensaje }, { quoted: msg })
+  return
+}
+    // Configuración por grupo
+    const groupCfg = isGroup ? getGroupConfig(from) : null
+
+    // Modo admin por grupo
+    if (isGroup && groupCfg?.adminMode && !isUserOwner) {
+      const isAdmin = await isGroupAdmin(sock, from, sender)
+      if (!isAdmin) {
+        await sock.sendMessage(from, { text: config.adminModeMessage }, { quoted: msg })
+        return
+      }
+    }
+
     if (config.autoRead && !msg.key.fromMe) {
-      try {
-        await sock.readMessages([msg.key])
-      } catch (err) {}
+      try { await sock.readMessages([msg.key]) } catch {}
     }
 
-    if (userName) {
-      await getUserName(sock, sender, userName)
-    }
+    if (userName) await getUserName(sock, sender, userName)
 
-    // Mensajes sin comando
-    if (!messageText || !messageText.startsWith(config.prefix)) {
-      if (messageText) {
+    if (!text || !text.startsWith(config.prefix)) {
+      if (text) {
         const groupName = isGroup ? await getGroupName(sock, from) : null
-        logMessage({ sender, message: messageText, isGroup, groupName, userName })
+        logMessage({ sender, message: text, isGroup, groupName, userName })
       }
       return
     }
 
-    // Procesar comando
-    const args = messageText.slice(config.prefix.length).trim().split(/\s+/)
-    const commandName = args.shift().toLowerCase()
-    const cmd = commands.get(commandName)
+    const args = text.slice(config.prefix.length).trim().split(/\s+/)
+    const cmdName = args.shift().toLowerCase()
+    const cmd = commands.get(cmdName)
     if (!cmd) return
 
-    const groupName = isGroup ? await getGroupName(sock, from) : null
-
-    // Verificar privado
-    if (!isGroup && !config.allowPrivate && !isUserOwner) {
-      await sock.sendMessage(from, { 
-        text: `🔒 *Comandos solo en el grupo oficial*\n\n${config.grupoOficial}` 
-      }, { quoted: msg })
+    if (config.maintenance && !isUserOwner) {
+      await sock.sendMessage(from, { text: config.maintenanceMessage }, { quoted: msg })
       return
     }
 
-    // Log del comando
+    if (config.antiSpam && !isUserOwner) {
+      const now = Date.now()
+      let data = userCommands.get(sender)
+      if (!data) data = { count: 1, timestamp: now }
+      else if (now - data.timestamp > config.spamTime) data = { count: 1, timestamp: now }
+      else data.count++
+      userCommands.set(sender, data)
+      if (data.count > config.spamLimit) {
+        const rest = Math.ceil((config.spamTime - (now - data.timestamp)) / 1000)
+        await sock.sendMessage(from, { text: `${config.spamMessage}\n⏳ Espera ${rest}s` }, { quoted: msg })
+        return
+      }
+    }
+
+    const groupName = isGroup ? await getGroupName(sock, from) : null
+
+    if (!isGroup && !config.allowPrivate && !isUserOwner) {
+      await sock.sendMessage(from, { text: `🔒 *Comandos solo en el grupo oficial*\n\n${config.grupoOficial}` }, { quoted: msg })
+      return
+    }
+
     logCommand({
-      command: commandName,
+      command: cmdName,
       sender: sender.split('@')[0],
       userName: userName || await getUserName(sock, sender),
       isOwner: isUserOwner,
@@ -149,29 +246,17 @@ export async function handleMessage(sock, msg, store) {
       prefix: config.prefix
     })
 
-    // Verificar owner
     if (cmd.owner && !isUserOwner) {
       await sock.sendMessage(from, { text: '🔒 Solo el owner' }, { quoted: msg })
       return
     }
 
-    // Verificar grupo
     if (cmd.group && !isGroup) {
       await sock.sendMessage(from, { text: '👥 Solo en grupos' }, { quoted: msg })
       return
     }
 
-    // Ejecutar comando
-    await cmd.execute(sock, msg, {
-      args,
-      from,
-      isGroup,
-      sender,
-      isOwner: isUserOwner,
-      groupName,
-      store,
-      config
-    })
+    await cmd.execute(sock, msg, { args, from, isGroup, sender, isOwner: isUserOwner, groupName, store, config })
 
   } catch (err) {
     logError(err, 'Handler')
@@ -179,24 +264,22 @@ export async function handleMessage(sock, msg, store) {
 }
 
 export function initializeAntiCall(sock) {
-  if (!config.antiCall) return
-  
+  if (!config?.antiCall) return
   sock.ev.on('call', async (calls) => {
     for (const call of calls) {
       if (call.status === 'offer') {
         try {
           await sock.rejectCall(call.id, call.from)
           logEvent('Anti-call', `Llamada rechazada de ${call.from.split('@')[0]}`)
-        } catch (err) {}
+        } catch {}
       }
     }
   })
   logEvent('Anti-call', 'Protección activada')
 }
 
+await loadDatabase()
 await loadCommands()
 
-export default {
-  handleMessage,
-  initializeAntiCall
-}
+
+export default { handleMessage, initializeAntiCall }
