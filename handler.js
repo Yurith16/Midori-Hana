@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import config from './config.js'
+import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logPlugin, logMessage, logEvent } from './utils/logger.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -10,13 +11,19 @@ const __dirname = path.dirname(__filename)
 const commands = new Map()
 const userNames = new Map()
 
-// Verificar owner
-function isOwner(sender, fromMe) {
+// Verificar owner (async)
+async function isOwner(sock, sender, msg, fromMe) {
   if (fromMe) return true
-  const cleanSender = sender.split('@')[0]
+  
+  let realNumber = sender.split('@')[0]
+  try {
+    const realJid = await getRealJid(sock, sender, msg)
+    realNumber = cleanNumber(realJid)
+  } catch {}
+  
   return config.ownerNumbers.some(owner => {
     const cleanOwner = owner.split('@')[0]
-    return cleanSender === cleanOwner
+    return realNumber === cleanOwner
   })
 }
 
@@ -91,8 +98,15 @@ export async function handleMessage(sock, msg, store) {
     const isGroup = from.endsWith('@g.us')
     const sender = msg.key.participant || from
     const fromMe = msg.key.fromMe || false
-    const isUserOwner = isOwner(sender, fromMe)
+    const isUserOwner = await isOwner(sock, sender, msg, fromMe)
     const userName = msg.pushName || null
+
+    // Auto-read para TODOS los mensajes
+    if (config.autoRead && !msg.key.fromMe) {
+      try {
+        await sock.readMessages([msg.key])
+      } catch (err) {}
+    }
 
     if (userName) {
       await getUserName(sock, sender, userName)
@@ -165,7 +179,19 @@ export async function handleMessage(sock, msg, store) {
 }
 
 export function initializeAntiCall(sock) {
-  logEvent('Anti-call', 'Inicializado')
+  if (!config.antiCall) return
+  
+  sock.ev.on('call', async (calls) => {
+    for (const call of calls) {
+      if (call.status === 'offer') {
+        try {
+          await sock.rejectCall(call.id, call.from)
+          logEvent('Anti-call', `Llamada rechazada de ${call.from.split('@')[0]}`)
+        } catch (err) {}
+      }
+    }
+  })
+  logEvent('Anti-call', 'Protección activada')
 }
 
 await loadCommands()

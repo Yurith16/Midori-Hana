@@ -1,7 +1,7 @@
 export default {
   command: ['del', 'delete'],
   group: true,
-  owner: true,
+  owner: false,
 
   async execute(sock, msg, { args, from, isGroup, isOwner }) {
     const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
