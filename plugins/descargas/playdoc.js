@@ -16,7 +16,7 @@ function execPromise(cmd) {
 }
 
 export default {
-  command: ['play', 'ytmp3'],
+  command: ['playdoc', 'ytmp3doc'],
   group: false,
   owner: false,
 
@@ -88,9 +88,10 @@ export default {
       await sock.sendMessage(from, { text: `> 📤 Enviando audio (${finalSizeMB}MB)...`, edit: processingMsg.key })
       
       await sock.sendMessage(from, {
-        audio: finalBuffer,
+        document: finalBuffer,
         mimetype: 'audio/mpeg',
         fileName: `${title.substring(0, 50).replace(/[<>:"/\\|?*]/g, '')}.mp3`,
+        caption: `${finalUrl}`,
         contextInfo: {
           externalAdReply: {
             title: `🍃 ${config.botName}`,

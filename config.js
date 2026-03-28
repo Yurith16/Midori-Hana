@@ -3,7 +3,7 @@ export default {
   ownerName: 'HERNANDEZ',
   ownerNumbers: ['5049692615'],
   botNumber: '50432821762',
-  useQR: true,
+  useQR: false,
   prefix: '.',
   sessionName: 'kari-session',
   autoRead: true,
