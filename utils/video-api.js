@@ -1,19 +1,18 @@
 import axios from 'axios'
 import fg from 'fg-senna'
 
-// API: Sylphy v2 (video)
+// API: Sylphy (la de tu amigo)
 export async function getVideoSylphy(url) {
-  const cleanUrl = url.split('?')[0]
-  const res = await axios.get(`https://sylphy.xyz/download/v2/ytmp4?url=${encodeURIComponent(cleanUrl)}&api_key=sylphy-olYb0wj`, { timeout: 60000 })
+  const res = await axios.get(`https://sylphy.xyz/download/ytmp4?url=${encodeURIComponent(url)}&api_key=sylphy-olYb0wj`, { timeout: 30000 })
   if (res.data?.status && res.data?.result?.dl_url) {
     return {
       url: res.data.result.dl_url,
       title: res.data.result.title,
-      thumb: res.data.result.thumb,
+      thumb: res.data.result.thumbnail || res.data.result.thumb,
       quality: res.data.result.quality || '360p'
     }
   }
-  throw new Error('Sylphy v2 falló')
+  throw new Error('Sylphy falló')
 }
 
 // API: EliteProTech
@@ -78,9 +77,9 @@ export async function getVideoFgSenna(url) {
   throw new Error('FG-Senna falló')
 }
 
-// Lista de APIs en orden de prioridad
+// LISTA DE APIs (Sylphy como primera opción)
 export const videoApis = [
-  { name: 'Sylphy v2', get: getVideoSylphy },
+  { name: 'Sylphy', get: getVideoSylphy },      // ← Nueva API de tu amigo
   { name: 'EliteProTech', get: getVideoEliteProTech },
   { name: 'Yupra', get: getVideoYupra },
   { name: 'Okatsu', get: getVideoOkatsu },

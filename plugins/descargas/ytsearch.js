@@ -11,34 +11,32 @@ export default {
   async execute(sock, msg, { args, from }) {
     const userId = msg.key.participant || from
     
-    if (activeUsers.has(userId)) {
-      await sock.sendMessage(from, { text: '> ⏳ Ya tienes una búsqueda en proceso' }, { quoted: msg })
-      return
-    }
-    
-       if (!args[0]) {
+    if (activeUsers.has(userId)) return 
+
+    if (!args[0]) {
+      await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
       await sock.sendMessage(from, { text: '> ¿Qué deseas buscar en YouTube? 🍃' }, { quoted: msg })
       return
     }
     
     activeUsers.set(userId, true)
     await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } })
-    const processingMsg = await sock.sendMessage(from, { text: '> 🔍 Buscando...' }, { quoted: msg })
     
     try {
       const query = args.join(' ')
       const results = await yts(query)
       
       if (!results?.videos?.length) {
-        await sock.sendMessage(from, { text: '> ❌ No se encontraron resultados', edit: processingMsg.key })
+        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
+        await sock.sendMessage(from, { text: '> No encontré nada oíste 🫢' }, { quoted: msg })
         return
       }
       
+      // Tomamos los primeros 5 resultados
       const videos = results.videos.slice(0, 5)
       
-      await sock.sendMessage(from, { text: '> 📥 Enviando resultados...', edit: processingMsg.key })
-      
-      for (const video of videos) {
+      for (let i = 0; i < videos.length; i++) {
+        const video = videos[i]
         const { title, author, duration, views, ago, url, thumbnail } = video
         
         const videoDetails = `> 🎵 *「🌱」 ${title}*\n\n` +
@@ -53,17 +51,20 @@ export default {
             image: { url: thumbnail },
             caption: videoDetails
           }, { quoted: msg })
+
+          // Pausa de 1.5 segundos entre imágenes para no saturar el chat
+          if (i < videos.length - 1) {
+            await new Promise(r => setTimeout(r, 1500))
+          }
         } catch (err) {
           console.log(`Error enviando video: ${err.message}`)
         }
       }
       
-      await sock.sendMessage(from, { text: '> ✅ Resultados enviados', edit: processingMsg.key })
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
       
     } catch (err) {
-      console.error(err)
-      await sock.sendMessage(from, { text: '> ❌ Error en la búsqueda', edit: processingMsg.key })
+      console.error('Error YTS:', err.message)
       await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     } finally {
       activeUsers.delete(userId)

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import config from '../../config.js'
 
 export default {
   command: ['instagram', 'ig', 'igdl'],
@@ -6,91 +7,77 @@ export default {
   owner: false,
 
   async execute(sock, msg, { args, from }) {
+    // Validación de entrada con tu estilo
     if (!args[0]) {
-      await sock.sendMessage(from, { text: '> Debe ingresar un enlace de instagram 🍃' }, { quoted: msg })
+      await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
+      await sock.sendMessage(from, { text: '> Ups!! Olvidaste colocar el enlace bb 🤭' }, { quoted: msg })
       return
     }
 
     // Reacción inicial
-    await sock.sendMessage(from, { react: { text: '📸', key: msg.key } })
-
-    const processingMsg = await sock.sendMessage(from, { text: '⏳ Procesando...' }, { quoted: msg })
+    await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
 
     try {
       const url = args[0]
-
-      if (!url.includes('instagram.com') && !url.includes('instagr.am')) {
-        throw new Error('Link no válido')
-      }
+      if (!url.includes('instagram.com') && !url.includes('instagr.am')) throw new Error()
 
       const apiUrl = `https://api-aswin-sparky.koyeb.app/api/downloader/igdl?url=${encodeURIComponent(url)}`
       const { data } = await axios.get(apiUrl, { timeout: 30000 })
 
-      if (!data.status || !data.data || !data.data.length) {
-        throw new Error('No se pudo obtener')
-      }
+      if (!data.status || !data.data || !data.data.length) throw new Error()
 
-      // Buscar el primer elemento que sea video
-      const videoItem = data.data.find(item => item.type === 'video')
-
-      if (!videoItem || !videoItem.url) {
-        throw new Error('No se encontró video')
-      }
+      // Priorizar el primer video encontrado en el carrusel o post
+      const videoItem = data.data.find(item => item.type === 'video') || data.data[0]
+      if (!videoItem.url) throw new Error()
 
       const videoUrl = videoItem.url
 
-      await sock.sendMessage(from, { 
-        text: `📥 Obteniendo información...`, 
-        edit: processingMsg.key 
-      })
-
-      // Verificar tamaño del archivo
+      // Verificar tamaño para decidir el diseño de envío
       const head = await axios.head(videoUrl, { timeout: 10000 }).catch(() => null)
+      const sizeBytes = parseInt(head?.headers?.['content-length'] || 0)
+      const sizeMB = sizeBytes / 1024 / 1024
 
-      if (head?.headers?.['content-length']) {
-        const sizeMB = parseInt(head.headers['content-length']) / 1024 / 1024
-
-        if (sizeMB > 100) {
-          await sock.sendMessage(from, { 
-            text: `❌ Video demasiado grande (${sizeMB.toFixed(2)}MB). Límite 100MB`,
-            edit: processingMsg.key 
-          })
-          await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
-          return
-        }
-
-        await sock.sendMessage(from, { 
-          text: `📥 Descargando (${sizeMB.toFixed(2)}MB)...`, 
-          edit: processingMsg.key 
-        })
-      } else {
-        await sock.sendMessage(from, { 
-          text: `📥 Descargando...`, 
-          edit: processingMsg.key 
-        })
+      // Límite de 300MB para evitar saturar el servidor
+      if (sizeMB > 300) {
+        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
+        return
       }
 
-      await sock.sendMessage(from, {
-        video: { url: videoUrl },
-        mimetype: 'video/mp4',
-        fileName: `instagram_video.mp4`,
-        caption: '> Descargado con éxito 🍃'
-      }, { quoted: msg })
+      const imgUrl = 'https://image2url.com/r2/default/images/1774819432365-f144e9e5-3e19-4ac7-b51f-54b90a07a6aa.jpg'
+      let sentMsg
 
-      await sock.sendMessage(from, { 
-        text: '✅ Video enviado', 
-        edit: processingMsg.key 
-      })
+      if (sizeMB > 100) {
+        // DISEÑO DOCUMENTO (Estilo Play) para videos pesados
+        sentMsg = await sock.sendMessage(from, {
+          document: { url: videoUrl },
+          mimetype: 'video/mp4',
+          fileName: `IG_Video_${Date.now()} - ${config.botName}.mp4`,
+          contextInfo: {
+            externalAdReply: {
+              title: `🍃 ${config.botName}`,
+              body: 'Instagram Video (Documento)',
+              thumbnailUrl: imgUrl,
+              sourceUrl: url,
+              mediaType: 1,
+              renderLargerThumbnail: true
+            }
+          }
+        }, { quoted: msg })
+      } else {
+        // DISEÑO VIDEO NORMAL (Limpio) para videos ligeros/reels
+        sentMsg = await sock.sendMessage(from, {
+          video: { url: videoUrl },
+          mimetype: 'video/mp4',
+          caption: `> ${config.botName} 🍃`
+        }, { quoted: msg })
+      }
 
-      // Reacción final
+      // Reacción de hojitas al archivo y éxito al usuario
+      await sock.sendMessage(from, { react: { text: '🍃', key: sentMsg.key } })
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
 
     } catch (err) {
-      console.error(err)
-      await sock.sendMessage(from, { 
-        text: '❌ Error al descargar', 
-        edit: processingMsg.key 
-      })
+      console.error('Error IG:', err.message)
       await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     }
   }

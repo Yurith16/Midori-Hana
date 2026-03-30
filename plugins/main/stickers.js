@@ -1,151 +1,165 @@
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import crypto from 'crypto'
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
+import { Sticker, StickerTypes } from 'wa-sticker-formatter'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegPath from 'ffmpeg-static'
-import { fileTypeFromBuffer } from 'file-type'
-import webp from 'node-webpmux'
+import ffprobeStatic from 'ffprobe-static'
+import fs from 'fs'
+import path from 'path'
+import { promisify } from 'util'
 import config from '../../config.js'
 
+// --- CONFIGURACIÓN DE RUTAS PARA CODESPACES ---
 ffmpeg.setFfmpegPath(ffmpegPath)
+ffmpeg.setFfprobePath(ffprobeStatic.path)
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const writeFileAsync = promisify(fs.writeFile)
+const unlinkAsync = promisify(fs.unlink)
 
-const activeUsers = new Map()
-
-async function addExif(webpSticker, packname, author, categories = ["🍃"], extra = {}) {
-    const img = new webp.Image()
-    const json = {
-        "sticker-pack-id": crypto.randomBytes(32).toString("hex"),
-        "sticker-pack-name": packname,
-        "sticker-pack-publisher": author,
-        emojis: categories,
-        ...extra,
-    }
-    const exifAttr = Buffer.from([
-        0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57,
-        0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
-    ])
-    const jsonBuffer = Buffer.from(JSON.stringify(json), "utf8")
-    const exif = Buffer.concat([exifAttr, jsonBuffer])
-    exif.writeUIntLE(jsonBuffer.length, 14, 4)
-    await img.load(webpSticker)
-    img.exif = exif
-    return await img.save(null)
-}
-
-function sticker6(img) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const type = (await fileTypeFromBuffer(img)) || { mime: "image/jpeg", ext: "jpg" }
-            const tmpDir = path.join(__dirname, '../../tmp')
-            if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true })
-
-            const tmp = path.join(tmpDir, `${+new Date()}.${type.ext}`)
-            const out = path.join(tmp + ".webp")
-
-            await fs.promises.writeFile(tmp, img)
-
-            const Fffmpeg = /video/i.test(type.mime)
-                ? ffmpeg(tmp).inputFormat(type.ext)
-                : ffmpeg(tmp).input(tmp)
-
-            Fffmpeg.on("error", function (err) {
-                if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
-                reject(err)
-            })
-            .on("end", async function () {
-                if (fs.existsSync(tmp)) fs.unlinkSync(tmp)
-                if (fs.existsSync(out)) {
-                    const result = await fs.promises.readFile(out)
-                    fs.unlinkSync(out)
-                    resolve(result)
-                }
-            })
-            .addOutputOptions([
-                `-vcodec`, `libwebp`, `-vf`,
-                `scale='min(320,iw)':min'(320,ih)':force_original_aspect_ratio=decrease,fps=15, pad=320:320:-1:-1:color=white@0.0, split [a][b]; [a] palettegen=reserve_transparent=on:transparency_color=ffffff [p]; [b][p] paletteuse`,
-            ])
-            .toFormat("webp")
-            .save(out)
-        } catch (e) {
-            reject(e)
-        }
-    })
-}
+const TEMP_DIR = path.join(process.cwd(), 'tmp', 'stickers')
+if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 
 export default {
-    command: ['sticker', 's', 'stiker'],
-    group: false,
-    owner: false,
+  command: ['s', 'sticker', 'stiker'],
+  group: false,
+  owner: false,
 
-    async execute(sock, msg, { args, from }) {
-        const userId = msg.key.participant || from
-        
-        if (activeUsers.has(userId)) {
-            await sock.sendMessage(from, { text: '> ⏳ Ya tienes un sticker en proceso' }, { quoted: msg })
-            return
-        }
-        
-        const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-        let targetMsg = msg
-        
-        if (quoted) {
-            targetMsg = {
-                key: {
-                    remoteJid: from,
-                    id: msg.message.extendedTextMessage.contextInfo.stanzaId,
-                    participant: msg.message.extendedTextMessage.contextInfo.participant || from
-                },
-                message: quoted
-            }
-        }
-        
-        const media = targetMsg.message?.imageMessage || targetMsg.message?.videoMessage
-        
-        if (!media) {
-            await sock.sendMessage(from, { text: '> 🖼️ Responde a una imagen o video con .sticker' }, { quoted: msg })
-            return
-        }
-        
-        const isVideo = !!targetMsg.message?.videoMessage
-        
-        if (isVideo) {
-            const duration = media.seconds || 0
-            if (duration > 7) {
-                await sock.sendMessage(from, { text: '> ❌ El video es demasiado largo. Máximo 7 segundos.' }, { quoted: msg })
-                return
-            }
-        }
-        
-        activeUsers.set(userId, true)
-        await sock.sendMessage(from, { react: { text: '🕓', key: msg.key } })
-        const processingMsg = await sock.sendMessage(from, { text: '> ⏳ Procesando...' }, { quoted: msg })
-        
-        try {
-            const buffer = await sock.downloadMediaMessage(targetMsg)
-            if (!buffer) throw new Error('Error al descargar')
-            
-            await sock.sendMessage(from, { text: '> 🔄 Convirtiendo...', edit: processingMsg.key })
-            
-            const stikerBuffer = await sticker6(buffer)
-            
-            const pack = config.stickerPack || config.botName || 'Kari'
-            const author = config.stickerAuthor || '🍃'
-            const exifSticker = await addExif(stikerBuffer, pack, author)
-            
-            await sock.sendMessage(from, { sticker: exifSticker }, { quoted: msg })
-            await sock.sendMessage(from, { text: '> ✅ Sticker enviado', edit: processingMsg.key })
-            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
-            
-        } catch (err) {
-            console.error(err)
-            await sock.sendMessage(from, { text: '> ❌ Error al crear sticker' }, { quoted: msg })
-            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
-        } finally {
-            activeUsers.delete(userId)
-        }
+  async execute(sock, msg, { args, from }) {
+    let tempFiles = []
+    
+    try {
+      const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
+      const messageToDownload = quoted ? quoted : msg.message
+
+      let mime = (messageToDownload?.imageMessage || 
+                  messageToDownload?.videoMessage || 
+                  messageToDownload?.stickerMessage || 
+                  messageToDownload?.documentMessage)?.mimetype || ''
+
+      if (!/webp|image|video/g.test(mime) && !args[0]) {
+        return sock.sendMessage(from, { text: '> 🖼️ Responde a una imagen o video para crear tu sticker oíste 🍃' }, { quoted: msg })
+      }
+
+      await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
+
+      let img
+      let isVideo = /video/g.test(mime)
+
+      // Descarga de Media
+      if (args[0] && isUrl(args[0])) {
+        const response = await fetch(args[0])
+        img = Buffer.from(await response.arrayBuffer())
+      } else {
+        img = await downloadMediaMessage(
+          { message: messageToDownload },
+          'buffer',
+          {},
+          { logger: console, reuploadRequest: sock.updateMediaMessage }
+        )
+      }
+
+      if (!img) throw new Error('Error al descargar')
+
+      // Optimización idéntica a tu comando base
+      if (isVideo) {
+        img = await optimizeVideoForSticker(img, tempFiles)
+      }
+
+      const stickerOptions = {
+        type: StickerTypes.FULL, 
+        quality: isVideo ? 30 : 70, 
+        pack: config.stickerPack || '',
+        author: config.stickerAuthor || '© kari bot'
+      }
+
+      const sticker = new Sticker(img, stickerOptions)
+      const stikerBuffer = await sticker.toBuffer()
+
+      if (stikerBuffer.length > 1.5 * 1024 * 1024) {
+        await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
+        return sock.sendMessage(from, { text: '> ⚠️ Archivo muy pesado oíste 🍃' }, { quoted: msg })
+      }
+
+      await sock.sendMessage(from, { sticker: stikerBuffer }, { quoted: msg })
+      await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
+
+    } catch (err) {
+      console.error('Error en sticker:', err)
+      await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
+    } finally {
+      // Limpieza de temporales
+      for (let file of tempFiles) {
+        try { if (fs.existsSync(file)) await unlinkAsync(file) } catch (e) {}
+      }
     }
+  }
+}
+
+// --- FUNCIONES DE MOTOR COPIADAS ---
+
+async function optimizeVideoForSticker(videoBuffer, tempFiles) {
+  const inputPath = path.join(TEMP_DIR, `input_${Date.now()}.mp4`)
+  const outputPath = path.join(TEMP_DIR, `output_${Date.now()}.webm`)
+  tempFiles.push(inputPath, outputPath)
+
+  await writeFileAsync(inputPath, videoBuffer)
+
+  // Obtener info para dimensiones reales (aquí se usa ffprobe)
+  const videoInfo = await getVideoInfo(inputPath)
+  const width = videoInfo.width
+  const height = videoInfo.height
+
+  let newWidth = width
+  let newHeight = height
+
+  if (width > height) {
+    if (width > 512) {
+      newWidth = 512
+      newHeight = Math.round((height / width) * 512)
+    }
+  } else {
+    if (height > 512) {
+      newHeight = 512
+      newWidth = Math.round((width / height) * 512)
+    }
+  }
+
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .toFormat('webm')
+      .setStartTime(0)
+      .duration(6)
+      .size(`${newWidth}x${newHeight}`)
+      .fps(10)
+      .videoBitrate('200k')
+      .videoCodec('libvpx-vp9')
+      .noAudio()
+      .on('end', async () => {
+        try {
+          resolve(fs.readFileSync(outputPath))
+        } catch (err) { reject(err) }
+      })
+      .on('error', (err) => {
+        console.error('Error FFmpeg:', err)
+        resolve(videoBuffer)
+      })
+      .save(outputPath)
+  })
+}
+
+function getVideoInfo(inputPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (err, metadata) => {
+      if (err) return reject(err)
+      const stream = metadata.streams.find(s => s.codec_type === 'video')
+      resolve({
+        width: stream.width,
+        height: stream.height,
+        duration: metadata.format.duration
+      })
+    })
+  })
+}
+
+function isUrl(text) {
+  return text.match(new RegExp(/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&/=]*)(jpe?g|gif|png|webp|mp4|mov)/, 'gi'))
 }

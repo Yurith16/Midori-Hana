@@ -22,94 +22,85 @@ export default {
 
   async execute(sock, msg, { args, from }) {
     if (!args[0]) {
-      await sock.sendMessage(from, { text: '> ¿Qué música deseas descargar? 🍃' }, { quoted: msg })
+      await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
+      await sock.sendMessage(from, { text: '> Ups!! Olvidaste colocar el nombre bb 🤭' }, { quoted: msg })
       return
     }
-    
-    await sock.sendMessage(from, { react: { text: '🎵', key: msg.key } })
-    const processingMsg = await sock.sendMessage(from, { text: '> ⏳ Procesando...' }, { quoted: msg })
+
+    await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
     
     let tempFile = null
     let convertedFile = null
     
     try {
       let videoUrl = args[0]
-      let finalUrl = videoUrl
       let videoTitle = ''
+      let duration = '0:00'
       
-      // Si no es URL de YouTube, buscar
       if (!videoUrl.match(/youtu/gi)) {
-        await sock.sendMessage(from, { text: `> 🔍 Buscando...`, edit: processingMsg.key })
-        
+        // MEJORA: Buscamos específicamente videos que YouTube clasifica como música
+        // y ordenamos los resultados para evitar tutoriales de barcos jaja
         const search = await yts(args.join(' '))
-        if (!search?.videos?.length) throw new Error('No encontrado')
         
-        videoUrl = search.videos[0].url
-        finalUrl = videoUrl
-        videoTitle = search.videos[0].title
+        // Buscamos el primer video que no sea un "Live" (en vivo) para evitar errores de stream
+        const video = search.videos.find(v => v.type === 'video') || search.videos[0]
+        
+        if (!video) throw new Error('No encontrado')
+        videoUrl = video.url
+        videoTitle = video.title
+        duration = video.timestamp
       }
       
-      await sock.sendMessage(from, { text: `> 📥 Obteniendo audio...`, edit: processingMsg.key })
-      
-      // Obtener audio de las APIs
       const result = await getAudio(videoUrl)
-      
+      if (!result || !result.url) throw new Error('API sin respuesta')
+
       const title = result.title || videoTitle
-      const thumb = result.thumb
+      const thumb = result.thumb || config.defaultImg
       const audioUrl = result.url
       const needsConversion = result.needsConversion || false
       
       let finalBuffer
-      let finalSizeMB
       
       if (needsConversion) {
-        // FG-Senna: descargar y convertir
-        tempFile = path.join(TEMP_DIR, `${Date.now()}_${Math.random().toString(36).slice(2)}.tmp`)
+        tempFile = path.join(TEMP_DIR, `${Date.now()}.tmp`)
         const response = await fetch(audioUrl)
         const buffer = Buffer.from(await response.arrayBuffer())
         fs.writeFileSync(tempFile, buffer)
         
-        await sock.sendMessage(from, { text: `> 🔄 Convirtiendo a MP3...`, edit: processingMsg.key })
-        
-        convertedFile = path.join(TEMP_DIR, `${Date.now()}_${Math.random().toString(36).slice(2)}.mp3`)
+        convertedFile = path.join(TEMP_DIR, `${Date.now()}.mp3`)
         await execPromise(`"${ffmpegPath}" -i "${tempFile}" -acodec libmp3lame -ab 128k -ar 44100 -preset ultrafast "${convertedFile}" 2>/dev/null`)
         
-        if (!fs.existsSync(convertedFile)) throw new Error('Error en conversión')
-        
         finalBuffer = fs.readFileSync(convertedFile)
-        finalSizeMB = (finalBuffer.length / 1024 / 1024).toFixed(2)
       } else {
-        // Otras APIs: descargar directamente
         const response = await fetch(audioUrl)
         finalBuffer = Buffer.from(await response.arrayBuffer())
-        finalSizeMB = (finalBuffer.length / 1024 / 1024).toFixed(2)
       }
-      
-      await sock.sendMessage(from, { text: `> 📤 Enviando audio (${finalSizeMB}MB)...`, edit: processingMsg.key })
-      
-      await sock.sendMessage(from, {
+
+      const finalSizeMB = (finalBuffer.length / 1024 / 1024).toFixed(2)
+      const cleanName = `${title.substring(0, 30).replace(/[<>:"/\\|?*]/g, '')} - ${config.botName}`
+
+      const sentMsg = await sock.sendMessage(from, {
         audio: finalBuffer,
         mimetype: 'audio/mpeg',
-        fileName: `${title.substring(0, 50).replace(/[<>:"/\\|?*]/g, '')}.mp3`,
+        fileName: `${cleanName}.mp3`,
         contextInfo: {
           externalAdReply: {
-            title: `🍃 ${config.botName}`,
-            body: title,
-            thumbnailUrl: thumb || 'https://i.imgur.com/8g9QRs6.png',
-            sourceUrl: finalUrl,
+            title: `🎵 ${title}`,
+            body: `${duration} • ${finalSizeMB} MB • YouTube`,
+            thumbnailUrl: thumb,
+            sourceUrl: videoUrl,
             mediaType: 1,
             renderLargerThumbnail: true
           }
         }
       }, { quoted: msg })
-      
-      await sock.sendMessage(from, { text: `> ✅ Audio enviado`, edit: processingMsg.key })
+
+      await sock.sendMessage(from, { react: { text: '🍃', key: sentMsg.key } })
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
       
     } catch (err) {
-      console.error(err)
-      await sock.sendMessage(from, { text: `> ⚠️ Error al descargar` }, { quoted: msg })
-      await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
+      console.error('Error en Play:', err.message)
+      await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     } finally {
       if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile)
       if (convertedFile && fs.existsSync(convertedFile)) fs.unlinkSync(convertedFile)

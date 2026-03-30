@@ -1,4 +1,5 @@
 import axios from 'axios'
+import config from '../../config.js'
 
 export default {
   command: ['tiktok', 'tt', 'tk'],
@@ -6,68 +7,45 @@ export default {
   owner: false,
 
   async execute(sock, msg, { args, from }) {
+    // Validación inicial con tu diseño "bb 🤭"
     if (!args[0]) {
-      await sock.sendMessage(from, { text: '> Debe ingresar un enlace de tiktok 🍃' }, { quoted: msg })
+      await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
+      await sock.sendMessage(from, { text: '> Ups!! Olvidaste colocar el enlace bb 🤭' }, { quoted: msg })
       return
     }
 
-    // Reacción inicial
-    await sock.sendMessage(from, { react: { text: '🎵', key: msg.key } })
-
-    const processingMsg = await sock.sendMessage(from, { text: '⏳ Procesando...' }, { quoted: msg })
+    // Reacción de inicio
+    await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
 
     try {
       const url = args[0]
-
-      if (!url.includes('tiktok.com') && !url.includes('vt.tiktok')) {
-        throw new Error('Link no válido')
-      }
+      if (!url.includes('tiktok.com')) throw new Error()
 
       const apiUrl = `https://api-aswin-sparky.koyeb.app/api/downloader/tiktok?url=${encodeURIComponent(url)}`
       const { data } = await axios.get(apiUrl, { timeout: 30000 })
 
-      if (!data.status || !data.data?.video) {
-        throw new Error('No se pudo obtener')
-      }
+      if (!data.status || !data.data?.video) throw new Error()
 
       const videoUrl = data.data.video
-      const title = data.data.title || 'TikTok'
-      const duration = data.data.duration || 0
+      const title = data.data.title || 'TikTok Video'
+      
+      // Nombre de archivo limpio para el sistema
+      const cleanFileName = `${title.substring(0, 20).replace(/[<>:"/\\|?*]/g, '')} - ${config.botName}.mp4`
 
-      if (duration > 600) {
-        await sock.sendMessage(from, { 
-          text: '❌ Video muy largo (máx 10 minutos)',
-          edit: processingMsg.key 
-        })
-        return
-      }
-
-      await sock.sendMessage(from, { 
-        text: `📥 ${title.substring(0, 40)}...`, 
-        edit: processingMsg.key 
-      })
-
-      await sock.sendMessage(from, {
+      // Envío del video limpio (sin externalAdReply para que sea más rápido de ver)
+      const sentMsg = await sock.sendMessage(from, {
         video: { url: videoUrl },
         mimetype: 'video/mp4',
-        fileName: `${title.substring(0, 50).replace(/[<>:"/\\|?*]/g, '')}.mp4`,
-        caption: '> Descargado con éxito 🍃'
+        fileName: cleanFileName,
+        caption: `> ${config.botName} 🍃`
       }, { quoted: msg })
 
-      await sock.sendMessage(from, { 
-        text: '✅ Video enviado', 
-        edit: processingMsg.key 
-      })
-
-      // Reacción final
+      // Doble reacción final
+      await sock.sendMessage(from, { react: { text: '🍃', key: sentMsg.key } })
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
 
     } catch (err) {
-      console.error(err)
-      await sock.sendMessage(from, { 
-        text: '❌ Error al descargar', 
-        edit: processingMsg.key 
-      })
+      console.error('Error TikTok:', err.message)
       await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     }
   }

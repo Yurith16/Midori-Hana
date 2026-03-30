@@ -1,11 +1,14 @@
+import { downloadMediaMessage } from '@whiskeysockets/baileys'
 import axios from 'axios'
 import FormData from 'form-data'
 import yts from 'yt-search'
 import fs from 'fs'
 import path from 'path'
-import { spawn } from 'child_process'
+import { exec } from 'child_process'
+import ffmpegPath from 'ffmpeg-static'
 import { fileURLToPath } from 'url'
 import config from '../../config.js'
+import { getAudio } from '../../utils/kar-api.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -15,104 +18,46 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true })
 
 const activeUsers = new Map()
 
-function tempName() {
-  return `whatmusic_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
-}
-
 function cleanup(files) {
   files.forEach(file => {
-    try { if (fs.existsSync(file)) fs.unlinkSync(file) } catch {}
+    try { if (file && fs.existsSync(file)) fs.unlinkSync(file) } catch {}
   })
 }
 
-function execPromise(cmd, args) {
+function execPromise(cmd) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args)
-    let error = ''
-    proc.stderr?.on('data', (data) => error += data)
-    proc.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`Error: ${error}`))
-    })
-    proc.on('error', reject)
+    exec(cmd, (err) => (err ? reject(err) : resolve()))
   })
-}
-
-async function convertToMp3(inputPath, outputPath) {
-  await execPromise('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error',
-    '-i', inputPath, '-vn',
-    '-c:a', 'libmp3lame', '-b:a', '128k',
-    '-ar', '44100', '-ac', '2', '-y', outputPath
-  ])
-  return outputPath
-}
-
-async function compressAudio(inputPath, outputPath) {
-  await execPromise('ffmpeg', [
-    '-hide_banner', '-loglevel', 'error',
-    '-i', inputPath,
-    '-c:a', 'libmp3lame', '-b:a', '64k',
-    '-ar', '22050', '-y', outputPath
-  ])
-  return outputPath
-}
-
-async function identifyWithAnanta(audioPath) {
-  const formData = new FormData()
-  formData.append('media', fs.createReadStream(audioPath))
-
-  const res = await axios.post('https://api.ananta.qzz.io/api/whatmusic', formData, {
-    headers: { 'x-api-key': 'antebryxivz14', ...formData.getHeaders() },
-    timeout: 90000
-  })
-
-  if (res.data?.success && res.data?.result) {
-    return {
-      title: res.data.result.title,
-      artist: res.data.result.subtitle,
-      youtube: res.data.result.youtube
-    }
-  }
-  throw new Error('Ananta falló')
-}
-
-async function identifyWithAudD(audioPath) {
-  const formData = new FormData()
-  formData.append('file', fs.createReadStream(audioPath))
-  formData.append('api_token', 'test')
-
-  const res = await axios.post('https://api.audd.io/', formData, {
-    headers: formData.getHeaders(),
-    timeout: 60000
-  })
-
-  if (res.data?.status === 'success' && res.data?.result) {
-    return {
-      title: res.data.result.title,
-      artist: res.data.result.artist,
-      youtube: {
-        title: `${res.data.result.title} - ${res.data.result.artist}`,
-        url: res.data.result.song_link || ''
-      }
-    }
-  }
-  throw new Error('AudD falló')
 }
 
 async function identifyMusic(audioPath) {
+  const formData = new FormData()
+  formData.append('media', fs.createReadStream(audioPath))
+  
   try {
-    return await identifyWithAnanta(audioPath)
+    const res = await axios.post('https://api.ananta.qzz.io/api/whatmusic', formData, {
+      headers: { 'x-api-key': 'antebryxivz14', ...formData.getHeaders() },
+      timeout: 60000
+    })
+    if (res.data?.success && res.data?.result) {
+      return {
+        title: res.data.result.title,
+        artist: res.data.result.subtitle
+      }
+    }
   } catch (err) {
-    console.log(`Ananta falló: ${err.message}`)
-    return await identifyWithAudD(audioPath)
+    const formData2 = new FormData()
+    formData2.append('file', fs.createReadStream(audioPath))
+    formData2.append('api_token', 'test')
+    const res2 = await axios.post('https://api.audd.io/', formData2, { headers: formData2.getHeaders() })
+    if (res2.data?.result) {
+      return {
+        title: res2.data.result.title,
+        artist: res2.data.result.artist
+      }
+    }
   }
-}
-
-async function searchYouTube(query) {
-  const results = await yts(query)
-  if (!results?.videos?.length) throw new Error('No encontrado')
-  return results.videos[0]
+  throw new Error('No identificado')
 }
 
 export default {
@@ -122,107 +67,95 @@ export default {
 
   async execute(sock, msg, { args, from }) {
     const userId = msg.key.participant || from
-    
-    if (activeUsers.has(userId)) {
-      await sock.sendMessage(from, { text: '> ⏳ Ya tienes una identificación en proceso' }, { quoted: msg })
-      return
-    }
+    if (activeUsers.has(userId)) return 
     
     const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-    
     if (!quoted) {
-      await sock.sendMessage(from, { text: '> 🎵 Responde a un audio o video para identificar la música' }, { quoted: msg })
-      return
-    }
-    
-    const isAudio = !!quoted.audioMessage
-    const isVideo = !!quoted.videoMessage
-    const isDocument = !!quoted.documentMessage?.mimetype?.includes('audio')
-    
-    if (!isAudio && !isVideo && !isDocument) {
-      await sock.sendMessage(from, { text: '> 🎵 Responde a un audio, video o archivo de audio' }, { quoted: msg })
+      await sock.sendMessage(from, { text: '> 🎵 Responde a un audio o video para identificar oíste 🍃' }, { quoted: msg })
       return
     }
     
     activeUsers.set(userId, true)
-    await sock.sendMessage(from, { react: { text: '🎵', key: msg.key } })
-    const processingMsg = await sock.sendMessage(from, { text: '> 🔍 Identificando canción...' }, { quoted: msg })
+    await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } })
     
-    const tempFiles = []
+    let tempInput = null
+    let tempAudio = null
+    let convertedFile = null
     
     try {
-      let buffer = null
-      
-      if (isAudio && quoted.audioMessage?.url) {
-        const res = await fetch(quoted.audioMessage.url)
-        buffer = Buffer.from(await res.arrayBuffer())
-      } else if (isVideo && quoted.videoMessage?.url) {
-        const res = await fetch(quoted.videoMessage.url)
-        buffer = Buffer.from(await res.arrayBuffer())
-      } else if (isDocument && quoted.documentMessage?.url) {
-        const res = await fetch(quoted.documentMessage.url)
-        buffer = Buffer.from(await res.arrayBuffer())
-      } else {
-        buffer = await sock.downloadMediaMessage({
-          key: msg.message.extendedTextMessage.contextInfo,
-          message: quoted
-        })
-      }
-      
-      if (!buffer || buffer.length < 1000) throw new Error('No se pudo descargar')
-      
-      const inputPath = path.join(TEMP_DIR, `${tempName()}_input`)
-      const audioPath = path.join(TEMP_DIR, `${tempName()}.mp3`)
-      tempFiles.push(inputPath, audioPath)
-      
-      fs.writeFileSync(inputPath, buffer)
-      
-      await sock.sendMessage(from, { text: '> 🎬 Procesando audio...', edit: processingMsg.key })
-      
-      await convertToMp3(inputPath, audioPath)
-      
-      const stats = fs.statSync(audioPath)
-      if (stats.size > 10 * 1024 * 1024) {
-        const compressedPath = path.join(TEMP_DIR, `${tempName()}_compressed.mp3`)
-        tempFiles.push(compressedPath)
-        await compressAudio(audioPath, compressedPath)
-        fs.unlinkSync(audioPath)
-        fs.renameSync(compressedPath, audioPath)
-      }
-      
-      await sock.sendMessage(from, { text: '> 🔍 Identificando...', edit: processingMsg.key })
-      
-      const result = await identifyMusic(audioPath)
-      
-      if (!result.title) throw new Error('No se pudo identificar')
-      
-      await sock.sendMessage(from, { text: `> 🎵 *${result.title}*`, edit: processingMsg.key })
-      
-      // Buscar en YouTube si no hay URL
-      let videoUrl = result.youtube?.url
-      let videoInfo = null
-      
-      if (!videoUrl || !videoUrl.includes('youtu')) {
-        const query = `${result.title} ${result.artist || ''}`
-        videoInfo = await searchYouTube(query)
-        videoUrl = videoInfo.url
-      }
-      
-      const mensaje = `> 🎵 *CANCIÓN IDENTIFICADA*\n\n` +
+      const buffer = await downloadMediaMessage({ message: quoted }, 'buffer', {}, { logger: console })
+      if (!buffer) throw new Error('Error descarga')
+
+      tempInput = path.join(TEMP_DIR, `${Date.now()}_input.tmp`)
+      tempAudio = path.join(TEMP_DIR, `${Date.now()}.mp3`)
+      fs.writeFileSync(tempInput, buffer)
+
+      await execPromise(`"${ffmpegPath}" -i "${tempInput}" -acodec libmp3lame -ab 128k -ar 44100 -y "${tempAudio}" 2>/dev/null`)
+
+      const result = await identifyMusic(tempAudio)
+      const searchQuery = `${result.title} ${result.artist}`
+
+      // 1. Buscar en YouTube
+      const search = await yts(searchQuery)
+      const video = search.videos.find(v => v.type === 'video') || search.videos[0]
+      if (!video) throw new Error('No encontrado en YT')
+
+      // 2. Enviar información con URL de YouTube
+      const infoText = `> 🎵 *IDENTIFICADA*\n\n` +
         `> 🎤 *Título:* ${result.title}\n` +
-        `> 👤 *Artista:* ${result.artist || 'Desconocido'}\n` +
-        `> 🔗 *Enlace:* ${videoUrl}\n\n` +
-        `> 🍃 Identificado por Kari`
+        `> 👤 *Artista:* ${result.artist}\n` +
+        `> 🔗 *YouTube:* ${video.url}\n\n` +
+        `> 📥 *Enviando audio...*\n> 🍃 ${config.botName}`
       
-      await sock.sendMessage(from, { text: mensaje, edit: processingMsg.key })
+      await sock.sendMessage(from, { text: infoText }, { quoted: msg })
+
+      // 3. Descargar usando kar-api
+      const downloadResult = await getAudio(video.url)
+      if (!downloadResult || !downloadResult.url) throw new Error('API sin respuesta')
+
+      let finalBuffer
+      if (downloadResult.needsConversion) {
+        const res = await fetch(downloadResult.url)
+        const buff = Buffer.from(await res.arrayBuffer())
+        const rawFile = path.join(TEMP_DIR, `${Date.now()}_raw.tmp`)
+        fs.writeFileSync(rawFile, buff)
+        
+        convertedFile = path.join(TEMP_DIR, `${Date.now()}_final.mp3`)
+        await execPromise(`"${ffmpegPath}" -i "${rawFile}" -acodec libmp3lame -ab 128k -ar 44100 -preset ultrafast "${convertedFile}" 2>/dev/null`)
+        finalBuffer = fs.readFileSync(convertedFile)
+        if (fs.existsSync(rawFile)) fs.unlinkSync(rawFile)
+      } else {
+        const res = await fetch(downloadResult.url)
+        finalBuffer = Buffer.from(await res.arrayBuffer())
+      }
+
+      // 4. Enviar el audio final con metadatos de YouTube
+      const finalSizeMB = (finalBuffer.length / 1024 / 1024).toFixed(2)
+      const cleanName = `${result.title.substring(0, 30)} - ${result.artist.substring(0, 20)}`
+
+      const sentMsg = await sock.sendMessage(from, {
+        audio: finalBuffer,
+        mimetype: 'audio/mpeg',
+        fileName: `${cleanName}.mp3`,
+        contextInfo: {
+          externalAdReply: {
+            title: result.title,
+            body: `${video.timestamp} • ${finalSizeMB} MB • YouTube`,
+            thumbnailUrl: downloadResult.thumb || video.thumbnail,
+            sourceUrl: video.url,
+            mediaType: 1,
+            renderLargerThumbnail: true
+          }
+        }
+      }, { quoted: msg })
+
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
-      
+
     } catch (err) {
-      console.error(err)
-      await sock.sendMessage(from, { text: `> ⚠️ No se pudo identificar la canción` }, { quoted: msg })
-      await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
+      console.error('Error WhatMusic:', err.message)
+      await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     } finally {
-      cleanup(tempFiles)
+      cleanup([tempInput, tempAudio, convertedFile])
       activeUsers.delete(userId)
     }
   }
