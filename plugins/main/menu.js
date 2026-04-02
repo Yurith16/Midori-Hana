@@ -111,7 +111,7 @@ export default {
       }
 
       scan(pluginsDir, 'main')
-      await new Promise(r => setTimeout(r, 500))
+      await new Promise(r => setTimeout(r, 600))
 
       // Mapeo de carpetas a categorías elegantes
       const categoryMap = {
@@ -119,7 +119,8 @@ export default {
         'owner': '𝙾𝚆𝙽𝙴𝚁',
         'administracion': '𝙶𝚁𝚄𝙿𝙾𝚂',
         'descargas': '𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚂',
-        'juegos': '𝙹𝚄𝙴𝙶𝙾𝚂'
+        'juegos': '𝙹𝚄𝙴𝙶𝙾𝚂',
+        'I-A-S': '𝙸𝙽𝚃𝙴𝙻𝙸𝙶𝙴𝙽𝙲𝙸𝙰 𝙰𝚁𝚃𝙸𝙵𝙸𝙲𝙸𝙰𝙻'  // ← Nueva categoría
       }
 
       const { hora, saludo, fecha } = getHondurasInfo()
@@ -142,9 +143,12 @@ export default {
       menu += `┃\n`
       menu += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
 
-      // Secciones de comandos por carpeta
-      for (const [cat, cmds] of Object.entries(cats)) {
-        if (cmds.length) {
+      // Secciones de comandos en orden
+      const orden = ['main', 'I-A-S', 'descargas', 'administracion', 'owner']
+      
+      for (const cat of orden) {
+        const cmds = cats[cat]
+        if (cmds && cmds.length) {
           const catName = categoryMap[cat] || cat.toUpperCase()
           menu += `╭━━〔 ${toElegantFont(catName)} 〕━━╮\n`
           menu += `┃\n`

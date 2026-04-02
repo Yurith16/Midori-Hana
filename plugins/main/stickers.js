@@ -8,7 +8,7 @@ import path from 'path'
 import { promisify } from 'util'
 import config from '../../config.js'
 
-// --- CONFIGURACIÓN DE RUTAS PARA CODESPACES ---
+// --- CONFIGURACIÓN DE RUTAS ---
 ffmpeg.setFfmpegPath(ffmpegPath)
 ffmpeg.setFfprobePath(ffprobeStatic.path)
 
@@ -59,24 +59,25 @@ export default {
 
       if (!img) throw new Error('Error al descargar')
 
-      // Optimización idéntica a tu comando base
+      // Optimización para videos (Stickers animados)
       if (isVideo) {
         img = await optimizeVideoForSticker(img, tempFiles)
       }
 
       const stickerOptions = {
         type: StickerTypes.FULL, 
-        quality: isVideo ? 30 : 70, 
-        pack: config.stickerPack || '',
-        author: config.stickerAuthor || '© kari bot'
+        quality: isVideo ? 25 : 70, // Bajamos un poco más la calidad en video para asegurar peso
+        pack: config.stickerPack,
+        author: config.stickerAuthor || '© Hernández'
       }
 
       const sticker = new Sticker(img, stickerOptions)
       const stikerBuffer = await sticker.toBuffer()
 
-      if (stikerBuffer.length > 1.5 * 1024 * 1024) {
+      // Límite estricto de 1MB para evitar errores de reproducción en WhatsApp
+      if (stikerBuffer.length > 1024 * 1024) {
         await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
-        return sock.sendMessage(from, { text: '> ⚠️ Archivo muy pesado oíste 🍃' }, { quoted: msg })
+        return sock.sendMessage(from, { text: '> ⚠️ El sticker es muy pesado (>1MB) y no se verá. Intenta con un video más corto oíste 🍃' }, { quoted: msg })
       }
 
       await sock.sendMessage(from, { sticker: stikerBuffer }, { quoted: msg })
@@ -86,7 +87,7 @@ export default {
       console.error('Error en sticker:', err)
       await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     } finally {
-      // Limpieza de temporales
+      // Limpieza de archivos temporales
       for (let file of tempFiles) {
         try { if (fs.existsSync(file)) await unlinkAsync(file) } catch (e) {}
       }
@@ -94,7 +95,7 @@ export default {
   }
 }
 
-// --- FUNCIONES DE MOTOR COPIADAS ---
+// --- FUNCIONES DE PROCESAMIENTO ---
 
 async function optimizeVideoForSticker(videoBuffer, tempFiles) {
   const inputPath = path.join(TEMP_DIR, `input_${Date.now()}.mp4`)
@@ -103,35 +104,38 @@ async function optimizeVideoForSticker(videoBuffer, tempFiles) {
 
   await writeFileAsync(inputPath, videoBuffer)
 
-  // Obtener info para dimensiones reales (aquí se usa ffprobe)
+  // Obtener info técnica del video
   const videoInfo = await getVideoInfo(inputPath)
-  const width = videoInfo.width
-  const height = videoInfo.height
+  const { width, height } = videoInfo
 
+  // Reducimos la escala base a 320px para ahorrar muchísimo peso sin perder vista
   let newWidth = width
   let newHeight = height
+  const MAX_SIZE = 320
 
   if (width > height) {
-    if (width > 512) {
-      newWidth = 512
-      newHeight = Math.round((height / width) * 512)
-    }
+    newWidth = MAX_SIZE
+    newHeight = Math.round((height / width) * MAX_SIZE)
   } else {
-    if (height > 512) {
-      newHeight = 512
-      newWidth = Math.round((width / height) * 512)
-    }
+    newHeight = MAX_SIZE
+    newWidth = Math.round((width / height) * MAX_SIZE)
   }
 
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .toFormat('webm')
       .setStartTime(0)
-      .duration(6)
+      .duration(5) // Máximo 5 segundos para stickers animados
       .size(`${newWidth}x${newHeight}`)
-      .fps(10)
-      .videoBitrate('200k')
+      .fps(8) // FPS bajo para reducir peso manteniendo fluidez
+      .videoBitrate('150k')
       .videoCodec('libvpx-vp9')
+      .addOptions([
+        '-crf 45', // Compresión constante (mayor número = menos peso)
+        '-deadline realtime',
+        '-cpu-used 4',
+        '-pix_fmt yuv420p'
+      ])
       .noAudio()
       .on('end', async () => {
         try {
@@ -140,7 +144,7 @@ async function optimizeVideoForSticker(videoBuffer, tempFiles) {
       })
       .on('error', (err) => {
         console.error('Error FFmpeg:', err)
-        resolve(videoBuffer)
+        resolve(videoBuffer) // Si falla la optimización, devolvemos el original
       })
       .save(outputPath)
   })
@@ -152,9 +156,9 @@ function getVideoInfo(inputPath) {
       if (err) return reject(err)
       const stream = metadata.streams.find(s => s.codec_type === 'video')
       resolve({
-        width: stream.width,
-        height: stream.height,
-        duration: metadata.format.duration
+        width: stream?.width || 512,
+        height: stream?.height || 512,
+        duration: metadata.format?.duration || 0
       })
     })
   })

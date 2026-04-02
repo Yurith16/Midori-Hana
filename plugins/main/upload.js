@@ -10,7 +10,7 @@ const activeUsers = new Map()
 const randomUA = () => `CT Nasa/${Math.floor(Math.random() * 10) + 1}.${Math.floor(Math.random() * 9)}`
 
 export default {
-    command: ['tourl', 'url', 'img'],
+    command: ['tourl'],
     group: false,
     owner: false,
 

@@ -36,26 +36,32 @@ export default {
       let videoUrl = args[0]
       let videoTitle = ''
       let duration = '0:00'
+      let ytThumb = '' // Variable para guardar la miniatura real de YT
       
+      // Si no es URL, buscamos en YouTube
       if (!videoUrl.match(/youtu/gi)) {
-        // MEJORA: Buscamos específicamente videos que YouTube clasifica como música
-        // y ordenamos los resultados para evitar tutoriales de barcos jaja
         const search = await yts(args.join(' '))
-        
-        // Buscamos el primer video que no sea un "Live" (en vivo) para evitar errores de stream
         const video = search.videos.find(v => v.type === 'video') || search.videos[0]
         
         if (!video) throw new Error('No encontrado')
         videoUrl = video.url
         videoTitle = video.title
         duration = video.timestamp
+        ytThumb = video.thumbnail // Guardamos la imagen real del video encontrado
+      } else {
+        // Si el usuario envió una URL directa, también buscamos su info para la imagen
+        const search = await yts({ videoId: videoUrl.split('v=')[1] || videoUrl.split('/').pop() })
+        ytThumb = search.thumbnail || search.image
+        videoTitle = search.title
+        duration = search.timestamp
       }
       
       const result = await getAudio(videoUrl)
       if (!result || !result.url) throw new Error('API sin respuesta')
 
       const title = result.title || videoTitle
-      const thumb = result.thumb || config.defaultImg
+      // PRIORIDAD: Usamos ytThumb (la de la búsqueda) antes que la de la API
+      const thumb = ytThumb || result.thumb || config.defaultImg
       const audioUrl = result.url
       const needsConversion = result.needsConversion || false
       
@@ -87,7 +93,7 @@ export default {
           externalAdReply: {
             title: `🎵 ${title}`,
             body: `${duration} • ${finalSizeMB} MB • YouTube`,
-            thumbnailUrl: thumb,
+            thumbnailUrl: thumb, // Aquí ya va la imagen corregida
             sourceUrl: videoUrl,
             mediaType: 1,
             renderLargerThumbnail: true

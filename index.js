@@ -177,12 +177,19 @@ async function startBot() {
   })
 
   sock.ev.on('creds.update', saveCreds)
+  
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
     for (const msg of messages) {
       if (!msg.message || !msg.key?.id) continue
       const from = msg.key.remoteJid
       if (!from || from.includes('@broadcast') || from.includes('status.broadcast')) continue
+      
+      // IGNORAR MENSAJES ANTIGUOS (más de 10 segundos)
+      const now = Date.now() / 1000
+      const msgTime = msg.messageTimestamp || 0
+      if (now - msgTime > 10) continue
+      
       const msgId = msg.key.id
       if (processedMessages.has(msgId)) continue
       processedMessages.add(msgId)
