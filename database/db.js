@@ -16,7 +16,6 @@ const db = new Low(adapter, defaultData)
 export async function loadDatabase() {
   await db.read()
   
-  // Asegurar que los datos existen
   if (!db.data) {
     db.data = defaultData
   }
@@ -59,7 +58,12 @@ export function getUser(userId) {
       age: null,
       registeredAt: Date.now(),
       exp: 0,
-      level: 1
+      level: 1,
+      kryons: 100,        // Moneda principal
+      jade: 0,           // Moneda premium
+      dailyLast: 0,      // Última recompensa diaria
+      workLast: 0,       // Último trabajo
+      robLast: 0         // Último robo
     }
     db.write()
   }

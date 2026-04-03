@@ -1,7 +1,7 @@
 export default {
   botName: '© kari',
   ownerName: 'HERNANDEZ',
-  ownerNumbers: ['5049692615'],
+  ownerNumbers: ['50496926150'],
   botNumber: '50432821762',
   useQR: true,
   prefix: '.',
@@ -13,8 +13,17 @@ export default {
   defaultImg: 'https://image2url.com/r2/default/images/1774819432365-f144e9e5-3e19-4ac7-b51f-54b90a07a6aa.jpg',
   grupoOficial: 'https://chat.whatsapp.com/EO71LJBsMj8C4Xgb2moMAd',
   soporte: 'https://wa.me/50496926150',
-  moneda: 'kryons',
   wm: '© kari bot',
+  
+  // Sistema de Economía & Progreso 🇭🇳
+  kryons: 'Kryons',        // Nombre para mostrar de moneda 1
+  jade: 'Jade',            // Nombre para mostrar de moneda 2
+  exp: 'EXP',              // Nombre para mostrar de la experiencia
+
+  // Emojis de Economía (Centralizados)
+  emojiKryons: '💠',
+  emojiJade: '💹',
+  emojiExp: '✨',
   
   welcomeText: '👋 Bienvenido {name} al grupo 🍃',
   goodbyeText: '👋 {name} salió del grupo 🌿',

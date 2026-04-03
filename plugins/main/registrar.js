@@ -17,7 +17,7 @@ export default {
     // Verificar si ya está registrado
     if (user.name && user.age) {
       await sock.sendMessage(from, { 
-        text: `> ✅ Ya estás registrado ${user.name} (${user.age} años)\n\n> Para actualizar tus datos usa: .update <nombre> <edad>` 
+        text: `> ✅ Ya estás registrado ${user.name} (${user.age} años)\n\n> 👛 Balance: ${user.kryons} ${config.emojiKryons}\n> Para actualizar tus datos usa: .update <nombre> <edad>` 
       }, { quoted: msg })
       return
     }
@@ -42,8 +42,10 @@ export default {
     
     await registerUser(realNumber, name, age)
     
+    const newUser = getUser(realNumber)
+    
     await sock.sendMessage(from, { 
-      text: `> ✅ *Registro completado*\n\n> 👤 Nombre: ${name}\n> 🎂 Edad: ${age} años\n> 🍃 Bienvenido a ${config.botName}` 
+      text: `> ✅ *Registro completado*\n\n> 👤 Nombre: ${name}\n> 🎂 Edad: ${age} años\n> 👛 Balance: ${newUser.kryons} ${config.emojiKryons}\n\n> 🍃 Bienvenido a ${config.botName}` 
     }, { quoted: msg })
     await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
   }

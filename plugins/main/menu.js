@@ -7,6 +7,14 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const pluginsDir = path.join(__dirname, '../..', 'plugins')
 
+const MENU_IMAGES = [
+  'https://image2url.com/r2/default/images/1775169893448-670c3c44-f5f6-45e4-8590-f26ee5d57d3c.jpg',
+  'https://image2url.com/r2/default/images/1775169901783-d9139def-b70e-4351-92e1-d6475bde7f14.jpg',
+  'https://image2url.com/r2/default/images/1775169909338-bb9510c3-1a4a-4a47-b0e3-f67980a0a339.jpg',
+  'https://image2url.com/r2/default/images/1775169923317-4895d1f2-c553-4d4d-bc03-4e010fbfb4d3.jpg',
+  'https://image2url.com/r2/default/images/1775169929161-1b6d1857-b8cc-483e-832b-de390136c833.jpg'
+]
+
 const EMOJI_SEQUENCES = {
   REACCIÓN: ['🌿', '🍃', '🍀', '🌱', '🌼', '🌸', '🌺', '💮', '🥀', '🌻', '🌹', '🌷', '🏵️'],
   BULLET: ['🍃', '🌱', '🍀', '🌿', '🌼', '🌸', '🌺', '🌻', '🌹', '🌷', '☘️', '🥀', '💐'],
@@ -43,30 +51,13 @@ function clockString(ms) {
 }
 
 function getHondurasInfo() {
-  const hora = new Date().toLocaleString('es-US', { 
-    timeZone: 'America/Tegucigalpa',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  })
+  const now = new Date()
+  const options = { timeZone: 'America/Tegucigalpa' }
+  const hora = now.toLocaleString('es-US', { ...options, hour: 'numeric', minute: '2-digit', hour12: true })
+  const horaNum = parseInt(now.toLocaleString('es-US', { ...options, hour: 'numeric', hour12: false }))
   
-  const horaNum = parseInt(new Date().toLocaleString('es-US', { 
-    timeZone: 'America/Tegucigalpa',
-    hour: 'numeric',
-    hour12: false 
-  }))
-  
-  let saludo = ''
-  if (horaNum >= 5 && horaNum < 12) saludo = 'Buenos días'
-  else if (horaNum >= 12 && horaNum < 18) saludo = 'Buenas tardes'
-  else saludo = 'Buenas noches'
-  
-  const fecha = new Date().toLocaleDateString('es-US', {
-    timeZone: 'America/Tegucigalpa',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
+  let saludo = horaNum >= 5 && horaNum < 12 ? 'Buenos días' : horaNum >= 12 && horaNum < 18 ? 'Buenas tardes' : 'Buenas noches'
+  const fecha = now.toLocaleDateString('es-US', { ...options, year: 'numeric', month: 'long', day: 'numeric' })
   
   return { hora, saludo, fecha }
 }
@@ -86,21 +77,18 @@ export default {
       await sock.sendMessage(from, { react: { text: currentEmojis.reacción, key: msg.key } })
 
       const cats = {}
-      
       function scan(dir) {
         const files = fs.readdirSync(dir)
         for (const file of files) {
           const full = path.join(dir, file)
-          if (fs.statSync(full).isDirectory()) {
-            scan(full)
-          } else if (file.endsWith('.js')) {
+          if (fs.statSync(full).isDirectory()) scan(full)
+          else if (file.endsWith('.js')) {
             try {
               const cmdFile = fs.readFileSync(full, 'utf8')
               if (cmdFile.includes('command:')) {
                 const folderName = path.basename(path.dirname(full))
                 const currentCat = folderName === 'plugins' ? 'main' : folderName
                 if (!cats[currentCat]) cats[currentCat] = []
-                
                 const match = cmdFile.match(/command:\s*\[\s*['"]([^'"]+)['"]/)
                 if (match) cats[currentCat].push(match[1])
               }
@@ -117,57 +105,67 @@ export default {
         'owner': '𝙾𝚆𝙽𝙴𝚁',
         'administracion': '𝙶𝚁𝚄𝙿𝙾𝚂',
         'descargas': '𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚂',
-        'busqueda': '𝙱𝚄𝚂𝚀𝚄𝙴𝙳𝙰𝚂', // Nueva categoría agregada
+        'busqueda': '𝙱𝚄𝚂𝚀𝚄𝙴𝙳𝙰𝚂',
         'juegos': '𝙹𝚄𝙴𝙶𝙾𝚂',
         'I-A-S': '𝙸𝙽𝚃𝙴𝙻𝙸𝙶𝙴𝙽𝙲𝙸𝙰 𝙰𝚁𝚃𝙸𝙵𝙸𝙲𝙸𝙰𝙻',
         'anime': '𝙰𝙽𝙸𝙼𝙴',
         'random-reacciones': '𝚁𝙴𝙰𝙲𝙲𝙸𝙾𝙽𝙴𝚂',
         '+18': '𝙲𝙾𝙽𝚃𝙴𝙽𝙸𝙳𝙾 +𝟷𝟾',
-        'herramientas': '𝙷𝙴𝚁𝚁𝙰𝙼𝙸𝙴𝙽𝚃𝙰𝚂'
+        'herramientas': '𝙷𝙴𝚁𝚁𝙰𝙼𝙸𝙴𝙽𝚃𝙰𝚂',
+        'economia': '𝙴𝙲𝙾𝙽𝙾𝙼𝙸𝙰' // Nueva categoría mapeada
       }
 
       const { hora, saludo, fecha } = getHondurasInfo()
       const username = msg.pushName || 'amor'
       const uptime = clockString(process.uptime() * 1000)
       
-      let menu = `╭━〔 ${currentEmojis.botTitle} ${toElegantFont(cfg.botName.toUpperCase())} ${currentEmojis.botTitle} 〕━╮\n`
-      menu += `┃\n`
-      menu += `┃ 🫧 _${saludo}, ${username}_ 🫧\n`
-      menu += `┃ ${currentEmojis.bullet} ${fecha}\n`
-      menu += `┃ ${currentEmojis.bullet} ${hora} (HN)\n`
-      menu += `┃\n`
-      menu += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
+      let menuTxt = `╭━〔 ${currentEmojis.botTitle} ${toElegantFont(cfg.botName.toUpperCase())} ${currentEmojis.botTitle} 〕━╮\n`
+      menuTxt += `┃\n`
+      menuTxt += `┃ 🫧 _${saludo}, ${username}_ 🫧\n`
+      menuTxt += `┃ ${currentEmojis.bullet} ${fecha}\n`
+      menuTxt += `┃ ${currentEmojis.bullet} ${hora} (HN)\n`
+      menuTxt += `┃\n`
+      menuTxt += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
       
-      menu += `╭━━〔 ${currentEmojis.infoTitle} ${toElegantFont('𝙸𝙽𝙵𝙾')} ${currentEmojis.infoTitle} 〕━━╮\n`
-      menu += `┃\n`
-      menu += `┃ ${currentEmojis.bullet} Creador: ${cfg.ownerName}\n`
-      menu += `┃ ${currentEmojis.bullet} Activo: ${uptime}\n`
-      menu += `┃ ${currentEmojis.bullet} Prefix: ${prefix}\n`
-      menu += `┃\n`
-      menu += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
+      menuTxt += `╭━━〔 ${currentEmojis.infoTitle} ${toElegantFont('𝙸𝙽𝙵𝙾')} ${currentEmojis.infoTitle} 〕━━╮\n`
+      menuTxt += `┃\n`
+      menuTxt += `┃ ${currentEmojis.bullet} Creador: ${cfg.ownerName}\n`
+      menuTxt += `┃ ${currentEmojis.bullet} Activo: ${uptime}\n`
+      menuTxt += `┃ ${currentEmojis.bullet} Prefix: ${prefix}\n`
+      menuTxt += `┃\n`
+      menuTxt += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
 
-      // Orden actualizado para incluir busqueda
-      const orden = ['main', 'I-A-S', 'anime', 'random-reacciones', 'descargas', 'busqueda', 'herramientas', 'juegos', 'administracion', '+18', 'owner']
+      // Orden actualizado: Principal -> IA -> Anime -> Reacciones -> Descargas -> Busquedas -> Herramientas -> Economia -> Juegos -> Grupo -> +18 -> Owner
+      const orden = ['main', 'I-A-S', 'anime', 'random-reacciones', 'descargas', 'busqueda', 'herramientas', 'economia', 'juegos', 'administracion', '+18', 'owner']
       
       for (const cat of orden) {
         const cmds = cats[cat]
         if (cmds && cmds.length) {
           const catName = categoryMap[cat] || cat.toUpperCase()
-          menu += `╭━━〔 ${toElegantFont(catName)} 〕━━╮\n`
-          menu += `┃\n`
+          menuTxt += `╭━━〔 ${toElegantFont(catName)} 〕━━╮\n`
+          menuTxt += `┃\n`
           for (const c of [...new Set(cmds)].sort()) {
-            menu += `┃ ${currentEmojis.bullet} ${prefix}${c}\n`
+            menuTxt += `┃ ${currentEmojis.bullet} ${prefix}${c}\n`
           }
-          menu += `┃\n`
-          menu += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
+          menuTxt += `┃\n`
+          menuTxt += `╰━━━━━━━━━━━━━━━━━━╯\n\n`
         }
       }
 
-      menu += `${currentEmojis.bullet} ${toElegantFont(`${cfg.botName.toUpperCase()} SISTEMA`)} ${currentEmojis.bullet}\n`
-      menu += `🩷 Soporte: ${cfg.soporte}\n`
-      menu += `🌸 Grupo: ${cfg.grupoOficial}`
+      menuTxt += `${currentEmojis.bullet} ${toElegantFont(`${cfg.botName.toUpperCase()} SISTEMA`)} ${currentEmojis.bullet}\n`
+      menuTxt += `🩷 Soporte: ${cfg.soporte}\n`
+      menuTxt += `🌸 Grupo: ${cfg.grupoOficial}`
 
-      await sock.sendMessage(from, { text: menu }, { quoted: msg })
+      const randomImg = MENU_IMAGES[Math.floor(Math.random() * MENU_IMAGES.length)]
+
+      try {
+        await sock.sendMessage(from, { 
+          image: { url: randomImg }, 
+          caption: menuTxt 
+        }, { quoted: msg })
+      } catch (imgError) {
+        await sock.sendMessage(from, { text: menuTxt }, { quoted: msg })
+      }
 
     } catch (err) {
       await sock.sendMessage(from, { text: '🍃 Error al generar el menú.' }, { quoted: msg })
