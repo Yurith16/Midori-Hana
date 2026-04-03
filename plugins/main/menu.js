@@ -12,7 +12,9 @@ const MENU_IMAGES = [
   'https://image2url.com/r2/default/images/1775169901783-d9139def-b70e-4351-92e1-d6475bde7f14.jpg',
   'https://image2url.com/r2/default/images/1775169909338-bb9510c3-1a4a-4a47-b0e3-f67980a0a339.jpg',
   'https://image2url.com/r2/default/images/1775169923317-4895d1f2-c553-4d4d-bc03-4e010fbfb4d3.jpg',
-  'https://image2url.com/r2/default/images/1775169929161-1b6d1857-b8cc-483e-832b-de390136c833.jpg'
+  'https://image2url.com/r2/default/images/1775169929161-1b6d1857-b8cc-483e-832b-de390136c833.jpg',
+  'https://image2url.com/r2/default/images/1775249310678-b222048e-48a3-4f0b-9e8f-2d5b1effeb14.jpg',
+  'https://image2url.com/r2/default/images/1775249318552-f0ae3b68-a529-4905-9fb3-5c1a0bbf0181.jpg'
 ]
 
 const EMOJI_SEQUENCES = {
