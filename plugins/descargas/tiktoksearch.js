@@ -33,22 +33,24 @@ async function tiktokSearch(query) {
         })
       }
     }
-    return resultados.slice(0, 5) // Forzamos 5 videos máximo
+    return resultados.slice(0, 5)
   } catch (error) {
-    throw new Error('API no responde oíste 🫢')
+    throw new Error('API no responde')
   }
 }
 
 export default {
   command: ['tiktoks', 'tks', 'tiktoksearch'],
-
+  group: false,
   owner: false,
 
   async execute(sock, msg, { args, from }) {
     const userId = msg.key.participant || from
     
-    if (activeUsers.has(userId)) return 
-
+    if (activeUsers.has(userId)) {
+      return
+    }
+    
     if (!args[0]) {
       await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
       await sock.sendMessage(from, { text: '> ¿Qué deseas buscar en TikTok? 🍃' }, { quoted: msg })
@@ -62,31 +64,49 @@ export default {
       const query = args.join(' ')
       const videos = await tiktokSearch(query)
       
-      let enviados = 0
+      if (!videos.length) throw new Error('No encontrado')
       
-      for (let i = 0; i < videos.length; i++) {
-        const video = videos[i]
-        
-        try {
-          // Envío directo: Descarga y suelta
-          await sock.sendMessage(from, {
-            video: { url: video.videoUrl },
-            mimetype: 'video/mp4',
-            caption: `> 📝 ${video.description}\n> 👤 @${video.author}\n> 🍃 ${config.botName}`
-          }, { quoted: msg })
-          
-          enviados++
-          
-          // Pausa de 2 segundos entre videos
-          if (i < videos.length - 1) {
-            await new Promise(r => setTimeout(r, 2000))
+      const medias = videos.map(v => ({
+        type: 'video',
+        data: { url: v.videoUrl },
+        caption: `> 📝 ${v.description}\n> 👤 @${v.author}\n> 🍃 ${config.botName}`
+      }))
+
+      const caption = `> 🔍 *BÚSQUEDA:* ${query}\n> 📹 *CANTIDAD:* ${medias.length}\n\n> 🍃 ${config.botName}`
+
+      // Crear mensaje de álbum
+      const album = await sock.generateWAMessageFromContent(from, {
+        messageContextInfo: {},
+        albumMessage: {
+          expectedImageCount: medias.length,
+          expectedVideoCount: medias.length,
+          contextInfo: {
+            remoteJid: msg.key.remoteJid,
+            fromMe: msg.key.fromMe,
+            stanzaId: msg.key.id,
+            participant: msg.key.participant || msg.key.remoteJid,
+            quotedMessage: msg.message,
           }
-        } catch (err) {
-          console.log(`⏭️ Error en video ${i + 1}: ${err.message}`)
         }
+      }, {})
+
+      await sock.relayMessage(from, album.message, { messageId: album.key.id })
+
+      for (let i = 0; i < medias.length; i++) {
+        const { type, data, caption: videoCaption } = medias[i]
+        const mediaMsg = await sock.generateWAMessage(from, {
+          [type]: data,
+          ...(i === 0 ? { caption } : { caption: videoCaption })
+        }, { upload: sock.waUploadToServer })
+
+        mediaMsg.message.messageContextInfo = {
+          messageAssociation: { associationType: 1, parentMessageKey: album.key }
+        }
+
+        await sock.relayMessage(from, mediaMsg.message, { messageId: mediaMsg.key.id })
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
       
-      if (enviados === 0) throw new Error('No pude enviar los videos')
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
       
     } catch (err) {

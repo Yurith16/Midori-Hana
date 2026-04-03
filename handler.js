@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-//import { getGroupConfig, loadDatabase } from './database/db.js'
+import { jidNormalizedUser, getContentType, proto, downloadContentFromMessage, generateWAMessageFromContent, prepareWAMessageMedia, generateWAMessage, delay, jidDecode, generateForwardMessageContent } from '@whiskeysockets/baileys'
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logPlugin, logMessage, logEvent } from './utils/logger.js'
 import { watchPlugins } from './utils/pluginWatcher.js'
@@ -153,6 +153,11 @@ function getHondurasHour() {
 export async function handleMessage(sock, msg, store) {
   if (!config) return
   
+  // Agregar generateWAMessageFromContent al socket si no existe
+  if (!sock.generateWAMessageFromContent) {
+    sock.generateWAMessageFromContent = generateWAMessageFromContent
+  }
+  
   try {
     const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
     const from = msg.key.remoteJid
@@ -163,21 +168,21 @@ export async function handleMessage(sock, msg, store) {
     const isUserOwner = await isOwner(sock, sender, msg, msg.key.fromMe)
     const userName = msg.pushName
 
-   // Control de horarios (Honduras)
-const currentHour = getHondurasHour()
-const isActiveHour = currentHour >= config.activeHours.start && currentHour < config.activeHours.end
+    // Control de horarios (Honduras)
+    const currentHour = getHondurasHour()
+    const isActiveHour = currentHour >= config.activeHours.start && currentHour < config.activeHours.end
 
-if (!isActiveHour && !isUserOwner) {
-  // Obtener hora actual formateada
-  const now = new Date()
-  const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
-  const horaFormateada = hondurasTime.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit' })
-  
-  const mensaje = `${config.offlineMessage}\n\n> Bot disponible de ${config.activeHours.start}:00 a ${config.activeHours.end}:00\n> Hora actual en Honduras: ${horaFormateada}`
-  
-  await sock.sendMessage(from, { text: mensaje }, { quoted: msg })
-  return
-}
+    if (!isActiveHour && !isUserOwner) {
+      const now = new Date()
+      const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
+      const horaFormateada = hondurasTime.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit' })
+      
+      const mensaje = `${config.offlineMessage}\n\n> Bot disponible de ${config.activeHours.start}:00 a ${config.activeHours.end}:00\n> Hora actual en Honduras: ${horaFormateada}`
+      
+      await sock.sendMessage(from, { text: mensaje }, { quoted: msg })
+      return
+    }
+    
     // Configuración por grupo
     const groupCfg = isGroup ? getGroupConfig(from) : null
 
@@ -280,6 +285,5 @@ export function initializeAntiCall(sock) {
 
 await loadDatabase()
 await loadCommands()
-
 
 export default { handleMessage, initializeAntiCall }

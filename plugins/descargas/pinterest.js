@@ -1,6 +1,5 @@
 import axios from 'axios'
-// Importamos la configuración para obtener el botName
-import '../../config.js' 
+import '../../config.js'
 
 export default {
   command: ['pinterest', 'pin'],
@@ -25,17 +24,45 @@ export default {
       }
       
       const imagenes = data.data.sort(() => 0.5 - Math.random()).slice(0, 6)
-      
-      for (const img of imagenes) {
-        // Si no hay descripción, usa el botName global
-        const description = img.description && img.description.trim() !== '' 
-          ? img.description 
-          : global.botName || '© kari'
+      const medias = imagenes.map(img => ({
+        type: 'image',
+        data: { url: img.image }
+      }))
 
-        await sock.sendMessage(from, {
-          image: { url: img.image },
-          caption: `> ${description}`
-        }, { quoted: msg })
+      const caption = ` *BÚSQUEDA:* ${query}\n` +
+                      ` *CANTIDAD:* ${medias.length}\n\n` +
+                      `> ${global.botName || '© kari'}`;
+
+      const album = sock.generateWAMessageFromContent(from, {
+        messageContextInfo: {},
+        albumMessage: {
+          expectedImageCount: medias.length,
+          expectedVideoCount: 0,
+          contextInfo: {
+            remoteJid: msg.key.remoteJid,
+            fromMe: msg.key.fromMe,
+            stanzaId: msg.key.id,
+            participant: msg.key.participant || msg.key.remoteJid,
+            quotedMessage: msg.message,
+          }
+        }
+      }, {});
+
+      await sock.relayMessage(from, album.message, { messageId: album.key.id });
+
+      for (let i = 0; i < medias.length; i++) {
+        const { type, data: mediaData } = medias[i];
+        const mediaMsg = await sock.generateWAMessage(from, {
+          [type]: mediaData,
+          ...(i === 0 ? { caption } : {})
+        }, { upload: sock.waUploadToServer });
+
+        mediaMsg.message.messageContextInfo = {
+          messageAssociation: { associationType: 1, parentMessageKey: album.key }
+        };
+
+        await sock.relayMessage(from, mediaMsg.message, { messageId: mediaMsg.key.id });
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
       
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })

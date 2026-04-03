@@ -2,7 +2,9 @@ import makeWASocket, {
   useMultiFileAuthState, 
   DisconnectReason,
   fetchLatestBaileysVersion,
-  Browsers
+  Browsers,
+  generateWAMessageFromContent,
+  generateWAMessage
 } from '@whiskeysockets/baileys'
 import qrcode from 'qrcode-terminal'
 import pino from 'pino'
@@ -90,6 +92,10 @@ async function startBot() {
     markOnlineOnConnect: true,
     getMessage: async () => undefined
   })
+
+  // Agregar funciones de Baileys al socket
+  sock.generateWAMessageFromContent = generateWAMessageFromContent
+  sock.generateWAMessage = generateWAMessage
 
   store.bind(sock.ev)
 
@@ -185,7 +191,6 @@ async function startBot() {
       const from = msg.key.remoteJid
       if (!from || from.includes('@broadcast') || from.includes('status.broadcast')) continue
       
-      // IGNORAR MENSAJES ANTIGUOS (más de 10 segundos)
       const now = Date.now() / 1000
       const msgTime = msg.messageTimestamp || 0
       if (now - msgTime > 10) continue
