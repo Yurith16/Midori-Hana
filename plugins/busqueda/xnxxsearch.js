@@ -1,11 +1,21 @@
 import axios from 'axios'
-import '../../config.js'
+import config from '../../config.js' 
 
 export default {
   command: ['xnxxsearch', 'xnxxs'],
   execute: async (sock, msg, { from, args, config: cfg }) => {
     // 1. Mensaje de ayuda con la reacción de sorpresa
-    if (!args[0]) {
+    if (!args[0]) 
+      // Verificación de Grupo Exclusivo
+              if (from !== config.nsfwGroupId) {
+                await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
+                return sock.sendMessage(from, { 
+                  text: String(config.nsfwMessage) 
+                }, { quoted: msg })
+              }
+      
+      
+      {
       await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
       await sock.sendMessage(from, { text: '> ¿Qué deseas buscar en XNXX? 🔞' }, { quoted: msg })
       return

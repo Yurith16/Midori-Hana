@@ -1,13 +1,19 @@
 import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
-import '../../config.js'
-
+import config from '../../config.js' 
 export default {
   command: ['xvideosdl', 'xvdl', 'xvideo'],
   execute: async (sock, msg, { args, from, text }) => {
     const url = text || args[0]
-    
+    // Verificación de Grupo Exclusivo
+        if (from !== config.nsfwGroupId) {
+          await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
+          return sock.sendMessage(from, { 
+            text: String(config.nsfwMessage) 
+          }, { quoted: msg })
+        }
+
     if (!url || !/xvideos\.[a-z]+/.test(url)) {
       return sock.sendMessage(from, { text: '`🍃` *Ingresa un enlace de XVideos válido.*' }, { quoted: msg })
     }

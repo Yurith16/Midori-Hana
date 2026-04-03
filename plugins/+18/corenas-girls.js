@@ -1,39 +1,39 @@
 import axios from 'axios'
-import '../../config.js'
+import config from '../../config.js'
 
 export default {
-  command: ['coreanas', 'koreans', 'k-girl'],
-  execute: async (sock, msg, { from }) => {
-    // Reacción temática de carga
-    await sock.sendMessage(from, { react: { text: '🌸', key: msg.key } })
+    command: ['coreanas'],
+    group: false,
+    owner: false,
 
-    try {
-      const apiUrl = `https://api.delirius.store/nsfw/corean`
-      
-      // Pedimos la imagen directamente como buffer (método seguro)
-      const response = await axios.get(apiUrl, { responseType: 'arraybuffer' })
+    execute: async (sock, msg, { from }) => {
+        // Verificación de Grupo Exclusivo
+        if (from !== config.nsfwGroupId) {
+            await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
+            return sock.sendMessage(from, { 
+                text: String(config.nsfwMessage) 
+            }, { quoted: msg })
+        }
 
-      if (!response.data) throw new Error('Sin datos')
+        await sock.sendMessage(from, { react: { text: '🌸', key: msg.key } })
 
-      // Enviamos la imagen totalmente limpia
-      const enviado = await sock.sendMessage(from, {
-        image: response.data,
-        mimetype: 'image/jpeg'
-      }, { quoted: msg })
+        try {
+            const apiUrl = `https://api.delirius.store/nsfw/corean`
+            const response = await axios.get(apiUrl, { responseType: 'arraybuffer' })
 
-      // Confirmación de éxito
-      await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
+            if (!response.data) throw new Error('Sin datos')
 
-      // Reacción de fueguito al envío
-      if (enviado) {
-        await sock.sendMessage(from, { 
-          react: { text: '🔥', key: enviado.key } 
-        })
-      }
+            await sock.sendMessage(from, {
+                image: response.data,
+                mimetype: 'image/jpeg',
+                caption: `> 🌸 Chica coreana\n> 🍃 ${config.botName}`
+            }, { quoted: msg })
 
-    } catch (err) {
-      console.error('Error Coreanas:', err.message)
-      await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
+            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
+
+        } catch (err) {
+            console.error('Error Coreanas:', err.message)
+            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
+        }
     }
-  }
 }

@@ -1,9 +1,16 @@
 import axios from 'axios'
-import '../../config.js'
+import config from '../../config.js' 
 
 export default {
   command: ['girls', 'chicas', 'tkgirls'],
   execute: async (sock, msg, { from }) => {
+    // Verificación de Grupo Exclusivo
+    if (from !== config.nsfwGroupId) {
+      await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
+      return sock.sendMessage(from, { 
+        text: String(config.nsfwMessage) 
+      }, { quoted: msg })
+    }
     await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
 
     try {
