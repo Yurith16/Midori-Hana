@@ -8,7 +8,7 @@ export default {
 
     if (!quotedMsg) {
       await sock.sendMessage(from, { 
-        text: '❌ Responde al mensaje que quieres eliminar\nEjemplo: .delete (respondiendo a un mensaje)' 
+        text: '❌ Responde al mensaje que quieres eliminar' 
       }, { quoted: msg })
       return
     }

@@ -36,7 +36,9 @@ export function getGroupConfig(groupId) {
     db.data.groups[groupId] = {
       antiLink: false,
       adminMode: false,
-      welcomeMessage: false
+      welcomeMessage: false,
+      welcomeText: '',
+      goodbyeText: ''
     }
     db.write()
   }

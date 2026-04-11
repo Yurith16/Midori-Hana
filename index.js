@@ -13,9 +13,11 @@ import { parsePhoneNumber } from 'awesome-phonenumber'
 import fs from 'fs'
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import config from './config.js'
+global.config = config
 import handler from './handler.js'
 import { startAutoBio } from './utils/autobio.js'
 import { cleanupPuppeteerCache } from './utils/cleanup.js'
+import { getGroupConfig } from './database/db.js'
 import { 
   logConnection, 
   logError, 
@@ -99,35 +101,43 @@ async function startBot() {
 
   store.bind(sock.ev)
 
-  // Evento de bienvenidas
+  // Evento de bienvenidas y despedidas
   sock.ev.on('group-participants.update', async (update) => {
-    if (!config.welcomeMessage) return
-    if (update.action !== 'add') return
-    
-    const { id, participants } = update
-    
+    const { id, participants, action } = update
+
+    // Solo procesar entradas y salidas
+    if (action !== 'add') return
+
     try {
+      // Consultar config del grupo en DB
+      const cfg = getGroupConfig(id)
+      if (!cfg.welcomeMessage) return
+
       for (const p of participants) {
         let participantId = typeof p === 'string' ? p : (p.id || p.jid || p)
-        
+
         let realJid = participantId
         try {
           realJid = await getRealJid(sock, participantId, { key: { remoteJid: id } })
         } catch {}
-        
+
         let phoneNumber = cleanNumber(realJid)
         let userName = phoneNumber
-        
+
         try {
           const contact = await sock.getContact(participantId)
           userName = contact.notify || contact.name || phoneNumber
         } catch {}
-        
-        const mensaje = config.welcomeText.replace('{name}', userName)
-        await sock.sendMessage(id, {
-          text: mensaje,
-          mentions: [participantId]
-        })
+
+        if (action === 'add') {
+          // Texto personalizado del grupo o fallback al config
+          const plantilla = cfg.welcomeText || config.welcomeText
+          const mensaje = plantilla.replace('@user', `@${participantId.split('@')[0]}`)
+          await sock.sendMessage(id, {
+            text: mensaje,
+            mentions: [participantId]
+          })
+        }
       }
     } catch (err) {}
   })

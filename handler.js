@@ -150,16 +150,37 @@ function getHondurasHour() {
   return hondurasTime.getHours()
 }
 
+// Detectar enlaces de WhatsApp y Telegram en cualquier variante
+const LINK_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:chat\.whatsapp\.com|wa\.me|whatsapp\.com|t\.me|telegram\.me|telegram\.dog|telegramchannels\.me|t\.dog)\/[^\s]*/i
+
+function hasLink(text) {
+  if (!text) return false
+  return LINK_REGEX.test(text)
+}
+
+function extractText(msg) {
+  const m = msg.message
+  if (!m) return ''
+  return (
+    m.conversation ||
+    m.extendedTextMessage?.text ||
+    m.imageMessage?.caption ||
+    m.videoMessage?.caption ||
+    m.documentMessage?.caption ||
+    m.extendedTextMessage?.contextInfo?.quotedMessage?.conversation ||
+    m.extendedTextMessage?.contextInfo?.quotedMessage?.extendedTextMessage?.text ||
+    ''
+  )
+}
+
 export async function handleMessage(sock, msg, store) {
   if (!config) return
   
-  // Agregar generateWAMessageFromContent al socket si no existe
   if (!sock.generateWAMessageFromContent) {
     sock.generateWAMessageFromContent = generateWAMessageFromContent
   }
   
   try {
-    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
     const from = msg.key.remoteJid
     if (!from) return
     
@@ -176,15 +197,26 @@ export async function handleMessage(sock, msg, store) {
       const now = new Date()
       const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
       const horaFormateada = hondurasTime.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit' })
-      
-      const mensaje = `${config.offlineMessage}\n\n> Bot disponible de ${config.activeHours.start}:00 a ${config.activeHours.end}:00\n> Hora actual en Honduras: ${horaFormateada}`
-      
-      await sock.sendMessage(from, { text: mensaje }, { quoted: msg })
+      await sock.sendMessage(from, { text: `${config.offlineMessage}\n\n> Bot disponible de ${config.activeHours.start}:00 a ${config.activeHours.end}:00\n> Hora actual en Honduras: ${horaFormateada}` }, { quoted: msg })
       return
     }
     
-    // Configuración por grupo
     const groupCfg = isGroup ? getGroupConfig(from) : null
+
+    // AntiLink — solo en grupos con antiLink activo, excluye admins y owner
+    if (isGroup && groupCfg?.antiLink && !isUserOwner) {
+      const isAdmin = await isGroupAdmin(sock, from, sender)
+      if (!isAdmin) {
+        const fullText = extractText(msg)
+        if (hasLink(fullText)) {
+          try {
+            await sock.sendMessage(from, { delete: msg.key })
+            await sock.sendMessage(from, { text: config.antiLinkMessage }, { quoted: msg })
+          } catch {}
+          return
+        }
+      }
+    }
 
     // Modo admin por grupo
     if (isGroup && groupCfg?.adminMode && !isUserOwner) {
@@ -200,6 +232,8 @@ export async function handleMessage(sock, msg, store) {
     }
 
     if (userName) await getUserName(sock, sender, userName)
+
+    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
 
     if (!text || !text.startsWith(config.prefix)) {
       if (text) {

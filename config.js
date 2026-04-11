@@ -29,7 +29,7 @@ export default {
   emojiExp: '✨',
   
   welcomeText: '👋 Bienvenido {name} al grupo 🍃',
-  goodbyeText: '👋 {name} salió del grupo 🌿',
+  goodbyeText: '👋 se salió un puto del grupo 🌿',
   
   stickerPack: '',
   stickerAuthor: '© kari bot',
