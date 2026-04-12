@@ -24,23 +24,32 @@ export default {
 
     async execute(sock, msg, { args, from }) {
         const userId = msg.key.participant || from
-        
+
         if (activeUsers.has(userId)) return
 
         const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
-        const messageToDownload = quoted ? quoted : msg.message
-        const mime = (messageToDownload?.imageMessage || messageToDownload?.documentMessage)?.mimetype || ''
 
-        if (!/image/g.test(mime)) {
-            return sock.sendMessage(from, { text: '> 🖼️ Responde a una imagen con *.hd 2* o *.hd 4* oíste 🍃' }, { quoted: msg })
+        // Detectar imagen: directa o quoted
+        const directMedia = msg.message?.imageMessage || msg.message?.documentMessage
+        const quotedMedia = quoted?.imageMessage || quoted?.documentMessage
+
+        const mediaMessage = directMedia ? msg.message : quotedMedia ? quoted : null
+        const mime = (mediaMessage?.imageMessage || mediaMessage?.documentMessage)?.mimetype || ''
+
+        if (!mediaMessage || !/image/g.test(mime)) {
+            return sock.sendMessage(from, { text: '> Responde o envía una imagen con *.hd 2* o *.hd 4* 🍃' }, { quoted: msg })
         }
 
         activeUsers.set(userId, true)
         await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
-        
+
         try {
+            const msgToDownload = directMedia
+                ? msg
+                : { key: msg.key, message: quoted }
+
             const buffer = await downloadMediaMessage(
-                { message: messageToDownload },
+                msgToDownload,
                 'buffer',
                 {},
                 { logger: console, reuploadRequest: sock.updateMediaMessage }
@@ -50,25 +59,26 @@ export default {
 
             const scale = args[0] === '2' || args[0] === '2x' ? '2' : '4'
             const filename = mime.includes('png') ? 'imagen.png' : 'imagen.jpg'
-            
+
             const { server, task } = await startTask()
             const upload = await uploadImage(server, task, buffer, filename, mime)
             const serverFilename = upload.server_filename
-            
+
             await upscaleStep(server, task, serverFilename, scale)
             await processImage(server, task, serverFilename, filename, scale)
             const resultBuffer = await downloadResult(server, task)
-            
+
             await sock.sendMessage(from, {
                 image: resultBuffer,
-                caption: `> ✅ *Imagen escalada a ${scale}x*`
+                caption: `> Imagen escalada a *${scale}x* 🍃`
             }, { quoted: msg })
-            
+
             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
 
         } catch (err) {
             console.error(err)
-            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
+            await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
+            await sock.sendMessage(from, { text: '> No se pudo procesar la imagen 🍃' }, { quoted: msg })
         } finally {
             activeUsers.delete(userId)
         }

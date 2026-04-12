@@ -4,7 +4,7 @@ export default {
   ownerNumbers: ['50496926150'],
   botNumber: '50432821762',
   useQR: true,
-  prefix: ['.', '#'],
+  prefix: '.',
   sessionName: 'kari-session',
   autoRead: true,
   autoBio: true,

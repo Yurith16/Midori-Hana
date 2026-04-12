@@ -170,14 +170,12 @@ function extractText(msg) {
   )
 }
 
-// Obtener lista de prefijos (soporta string o array en config)
 function getPrefixes() {
   const p = config?.prefix
   if (Array.isArray(p)) return p
   return p ? [p] : ['.']
 }
 
-// Detectar qué prefijo usó el mensaje y retornar el texto sin él
 function getCommandText(text) {
   for (const prefix of getPrefixes()) {
     if (text.startsWith(prefix)) {
@@ -185,6 +183,16 @@ function getCommandText(text) {
     }
   }
   return { matched: false }
+}
+
+// Resolver número real para mostrar en consola
+async function resolveDisplaySender(sock, sender, msg) {
+  try {
+    const realJid = await getRealJid(sock, sender, msg)
+    return realJid
+  } catch {
+    return sender
+  }
 }
 
 export async function handleMessage(sock, msg, store) {
@@ -252,14 +260,19 @@ export async function handleMessage(sock, msg, store) {
 
     if (userName) await getUserName(sock, sender, userName)
 
-    const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
+    const text = msg.message?.conversation ||
+                 msg.message?.extendedTextMessage?.text ||
+                 msg.message?.imageMessage?.caption ||
+                 msg.message?.videoMessage?.caption ||
+                 msg.message?.documentMessage?.caption || ''
 
     const { matched, prefix, text: cmdText } = getCommandText(text)
 
     if (!text || !matched) {
       if (text) {
         const groupName = isGroup ? await getGroupName(sock, from) : null
-        logMessage({ sender, message: text, isGroup, groupName, userName })
+        const displaySender = await resolveDisplaySender(sock, sender, msg)
+        logMessage({ sender: displaySender, message: text, isGroup, groupName, userName })
       }
       return
     }
@@ -295,9 +308,12 @@ export async function handleMessage(sock, msg, store) {
       return
     }
 
+    // Resolver número real para el log
+    const displaySender = await resolveDisplaySender(sock, sender, msg)
+
     logCommand({
       command: cmdName,
-      sender: sender.split('@')[0],
+      sender: displaySender,
       userName: userName || await getUserName(sock, sender),
       isOwner: isUserOwner,
       isGroup,

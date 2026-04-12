@@ -7,18 +7,17 @@ export default {
 
   async execute(sock, msg, { from, sender }) {
     try {
-      // Obtener el número real usando getRealJid
       const realJid = await getRealJid(sock, sender, msg)
       const cleanId = cleanNumber(realJid)
-      
-      await sock.sendMessage(from, { 
-        text: `📱 Tu número real: ${cleanId}\n\nSi eres owner, agrega este número a ownerNumbers en config.js:\n"${cleanId}"` 
+
+      await sock.sendMessage(from, {
+        text: `> 📱 Tu número: *+${cleanId}* 🍃\n> Para usarlo como owner agrega: *"${cleanId}"*`
       }, { quoted: msg })
+
     } catch (err) {
-      // Fallback por si algo falla
-      const cleanId = sender.split('@')[0]
-      await sock.sendMessage(from, { 
-        text: `📱 Tu ID: ${cleanId}\n\nSi eres owner, agrega este ID a ownerNumbers en config.js:\n"${cleanId}"` 
+      const cleanId = cleanNumber(sender)
+      await sock.sendMessage(from, {
+        text: `> 📱 Tu número: *+${cleanId}* 🍃`
       }, { quoted: msg })
     }
   }
