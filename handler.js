@@ -5,7 +5,7 @@ import { jidNormalizedUser, getContentType, proto, downloadContentFromMessage, g
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logPlugin, logMessage, logEvent } from './utils/logger.js'
 import { watchPlugins } from './utils/pluginWatcher.js'
-import { getGroupConfig, loadDatabase } from './database/db.js'
+import { getGroupConfig, loadDatabase, trackActivity } from './database/db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -13,7 +13,6 @@ const __dirname = path.dirname(__filename)
 let config = null
 let commands = new Map()
 
-// Cargar DB
 await loadDatabase()
 
 async function reloadConfig() {
@@ -143,14 +142,12 @@ async function loadCommands() {
   logEvent('Comandos', `${commands.size} disponibles`)
 }
 
-// Obtener hora actual de Honduras
 function getHondurasHour() {
   const now = new Date()
   const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
   return hondurasTime.getHours()
 }
 
-// Detectar enlaces de WhatsApp y Telegram en cualquier variante
 const LINK_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:chat\.whatsapp\.com|wa\.me|whatsapp\.com|t\.me|telegram\.me|telegram\.dog|telegramchannels\.me|t\.dog)\/[^\s]*/i
 
 function hasLink(text) {
@@ -173,6 +170,23 @@ function extractText(msg) {
   )
 }
 
+// Obtener lista de prefijos (soporta string o array en config)
+function getPrefixes() {
+  const p = config?.prefix
+  if (Array.isArray(p)) return p
+  return p ? [p] : ['.']
+}
+
+// Detectar qué prefijo usó el mensaje y retornar el texto sin él
+function getCommandText(text) {
+  for (const prefix of getPrefixes()) {
+    if (text.startsWith(prefix)) {
+      return { matched: true, prefix, text: text.slice(prefix.length) }
+    }
+  }
+  return { matched: false }
+}
+
 export async function handleMessage(sock, msg, store) {
   if (!config) return
   
@@ -189,6 +203,11 @@ export async function handleMessage(sock, msg, store) {
     const isUserOwner = await isOwner(sock, sender, msg, msg.key.fromMe)
     const userName = msg.pushName
 
+    // Registrar actividad en grupos
+    if (isGroup && !msg.key.fromMe) {
+      trackActivity(from, sender)
+    }
+
     // Control de horarios (Honduras)
     const currentHour = getHondurasHour()
     const isActiveHour = currentHour >= config.activeHours.start && currentHour < config.activeHours.end
@@ -203,7 +222,7 @@ export async function handleMessage(sock, msg, store) {
     
     const groupCfg = isGroup ? getGroupConfig(from) : null
 
-    // AntiLink — solo en grupos con antiLink activo, excluye admins y owner
+    // AntiLink
     if (isGroup && groupCfg?.antiLink && !isUserOwner) {
       const isAdmin = await isGroupAdmin(sock, from, sender)
       if (!isAdmin) {
@@ -218,7 +237,7 @@ export async function handleMessage(sock, msg, store) {
       }
     }
 
-    // Modo admin por grupo
+    // Modo admin
     if (isGroup && groupCfg?.adminMode && !isUserOwner) {
       const isAdmin = await isGroupAdmin(sock, from, sender)
       if (!isAdmin) {
@@ -235,7 +254,9 @@ export async function handleMessage(sock, msg, store) {
 
     const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
 
-    if (!text || !text.startsWith(config.prefix)) {
+    const { matched, prefix, text: cmdText } = getCommandText(text)
+
+    if (!text || !matched) {
       if (text) {
         const groupName = isGroup ? await getGroupName(sock, from) : null
         logMessage({ sender, message: text, isGroup, groupName, userName })
@@ -243,7 +264,7 @@ export async function handleMessage(sock, msg, store) {
       return
     }
 
-    const args = text.slice(config.prefix.length).trim().split(/\s+/)
+    const args = cmdText.trim().split(/\s+/)
     const cmdName = args.shift().toLowerCase()
     const cmd = commands.get(cmdName)
     if (!cmd) return
@@ -282,7 +303,7 @@ export async function handleMessage(sock, msg, store) {
       isGroup,
       groupName,
       args,
-      prefix: config.prefix
+      prefix
     })
 
     if (cmd.owner && !isUserOwner) {

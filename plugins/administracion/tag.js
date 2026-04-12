@@ -1,5 +1,5 @@
 export default {
-  command: ['tagall', 'tag', 'invocar'],
+  command: ['tag'],
   group: true,
   owner: false,
 

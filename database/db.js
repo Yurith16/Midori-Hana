@@ -7,7 +7,6 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const file = path.join(__dirname, '..', 'database.json')
 
-// Datos por defecto OBLIGATORIOS para lowdb
 const defaultData = { groups: {}, users: {} }
 
 const adapter = new JSONFile(file)
@@ -15,17 +14,9 @@ const db = new Low(adapter, defaultData)
 
 export async function loadDatabase() {
   await db.read()
-  
-  if (!db.data) {
-    db.data = defaultData
-  }
-  if (!db.data.groups) {
-    db.data.groups = {}
-  }
-  if (!db.data.users) {
-    db.data.users = {}
-  }
-  
+  if (!db.data) db.data = defaultData
+  if (!db.data.groups) db.data.groups = {}
+  if (!db.data.users) db.data.users = {}
   await db.write()
   console.log('[DB] Base de datos cargada')
 }
@@ -38,8 +29,13 @@ export function getGroupConfig(groupId) {
       adminMode: false,
       welcomeMessage: false,
       welcomeText: '',
-      goodbyeText: ''
+      goodbyeText: '',
+      activity: {}
     }
+    db.write()
+  }
+  if (!db.data.groups[groupId].activity) {
+    db.data.groups[groupId].activity = {}
     db.write()
   }
   return db.data.groups[groupId]
@@ -52,6 +48,17 @@ export async function updateGroupConfig(groupId, updates) {
   return cfg
 }
 
+// Registrar actividad: guarda timestamp y cuenta mensajes
+export function trackActivity(groupId, userId) {
+  const cfg = getGroupConfig(groupId)
+  const prev = cfg.activity[userId]
+  cfg.activity[userId] = {
+    last: Date.now(),
+    count: prev?.count ? prev.count + 1 : 1
+  }
+  db.write()
+}
+
 // FUNCIONES DE USUARIO
 export function getUser(userId) {
   if (!db.data.users[userId]) {
@@ -61,11 +68,11 @@ export function getUser(userId) {
       registeredAt: Date.now(),
       exp: 0,
       level: 1,
-      kryons: 100,        // Moneda principal
-      jade: 0,           // Moneda premium
-      dailyLast: 0,      // Última recompensa diaria
-      workLast: 0,       // Último trabajo
-      robLast: 0         // Último robo
+      kryons: 100,
+      jade: 0,
+      dailyLast: 0,
+      workLast: 0,
+      robLast: 0
     }
     db.write()
   }
