@@ -1,0 +1,4 @@
+paso 1: bash configurar-midori.sh
+paso 2: git add .
+paso 3: git mc
+paso 4: git push
