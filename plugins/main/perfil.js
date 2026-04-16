@@ -1,36 +1,47 @@
 import { getRealJid, cleanNumber } from '../../utils/jid.js'
-import { getUser } from '../../database/db.js'
+import { registerUser, getUser } from '../../database/db.js'
+import config from '../../config.js'
 
 export default {
-  command: ['profile', 'perfil', 'my'],
-  group: false,
-  owner: false,
+    command: ['perfil', 'me', 'profile'],
+    group: false,
+    owner: false,
 
-  async execute(sock, msg, { args, from, sender }) {
-    const userId = msg.key.participant || from
-    const realJid = await getRealJid(sock, userId, msg)
-    const realNumber = cleanNumber(realJid)
-    
-    const user = getUser(realNumber)
-    
-    if (!user.name || !user.age) {
-      await sock.sendMessage(from, { 
-        text: `> 📝 No estás registrado\n\n> Usa: .register <nombre> <edad>` 
-      }, { quoted: msg })
-      return
+    async execute(sock, msg, { from, sender }) {
+        try {
+            const userId = sender
+            const user = getUser(userId)
+
+            const perfil = `
+✨ *PERFIL DE USUARIO* ✨
+──────────────────
+👤 *Nombre:* ${user.name || 'Sin registrar'}
+🎂 *Edad:* ${user.age || '??'} años
+✨ *Nivel:* ${user.level} (${user.exp} EXP)
+
+${config.emojiKryons} *${config.kryons}:* ${user.kryons}
+${config.emojiJade} *${config.jade}:* ${user.jade}
+──────────────────
+🌿 *${config.botName}*
+`.trim()
+
+            let pp
+            try {
+                // Intentamos obtener la foto de perfil del usuario
+                pp = await sock.profilePictureUrl(userId, 'image')
+            } catch {
+                // Si no tiene foto o da error, usamos la del config
+                pp = config.defaultImg
+            }
+
+            await sock.sendMessage(from, {
+                image: { url: pp },
+                caption: perfil,
+                mentions: [userId]
+            }, { quoted: msg })
+
+        } catch (error) {
+            console.error('Error en el comando perfil:', error)
+        }
     }
-    
-    const fechaRegistro = new Date(user.registeredAt).toLocaleDateString('es-HN')
-    
-    const perfil = `> 👤 *PERFIL DE USUARIO*\n\n` +
-      `> 🆔 Número: ${realNumber}\n` +
-      `> 📛 Nombre: ${user.name}\n` +
-      `> 🎂 Edad: ${user.age} años\n` +
-      `> 📅 Registrado: ${fechaRegistro}\n` +
-      `> ⭐ Nivel: ${user.level || 1}\n` +
-      `> ✨ Experiencia: ${user.exp || 0}\n\n` +
-      `> 🍃 Gracias por usar el bot`
-    
-    await sock.sendMessage(from, { text: perfil }, { quoted: msg })
-  }
 }

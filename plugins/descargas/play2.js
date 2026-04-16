@@ -50,7 +50,6 @@ export default {
       const sizeBytes = parseInt(head?.headers?.['content-length'] || 0)
       const sizeMB = sizeBytes > 0 ? parseFloat((sizeBytes / 1024 / 1024).toFixed(2)) : 0
 
-      // Límite máximo de 400MB
       if (sizeMB > 400) {
         await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
         await sock.sendMessage(from, { text: `> El video es demasiado pesado para enviarlo oíste 🫢` }, { quoted: msg })
@@ -59,19 +58,23 @@ export default {
 
       const cleanName = `${title.substring(0, 30).replace(/[<>:"/\\|?*]/g, '')} - ${config.botName}.mp4`
 
-      // SIEMPRE como documento
       const sentMsg = await sock.sendMessage(from, {
         document: { url: result.url },
         mimetype: 'video/mp4',
         fileName: cleanName,
+        caption: ` `,
         contextInfo: {
+          forwardingScore: 9999999,
+          isForwarded: true,
           externalAdReply: {
-            title: `🎬 ${title}`,
-            body: `${duration} • ${sizeMB} MB • YouTube`,
-            thumbnailUrl: videoThumb, 
-            sourceUrl: videoUrl,
+            showAdAttribution: false,
+            renderLargerThumbnail: false,
+            title: title,
+            body: config.botName,
+            containsAutoReply: true,
             mediaType: 1,
-            renderLargerThumbnail: true
+            thumbnailUrl: videoThumb,
+            sourceUrl: videoUrl
           }
         }
       }, { quoted: msg })

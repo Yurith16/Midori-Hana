@@ -1,10 +1,10 @@
 export default {
-  botName: '© kari',
+  botName: '𝑴𝒊𝒅𝒐𝒓𝒊-𝑯𝒂𝒏𝒂',
   ownerName: 'HERNANDEZ',
   ownerNumbers: ['50496926150'],
   botNumber: '50432821762',
   useQR: true,
-  prefix: '.',
+  prefix: '/',
   sessionName: 'kari-session',
   autoRead: true,
   autoBio: true,
@@ -16,7 +16,7 @@ export default {
   nsfwGroupId: '120363427306410107@g.us', 
   nsfwMessage: '> 🍃 Este comando solo funciona en el grupo exclusivo para adultos.\n\n> 🔗 Únete aquí: https://chat.whatsapp.com/IYM42pfeB4Q3r902v0MBzy',
   soporte: 'https://wa.me/50496926150',
-  wm: '© kari bot',
+  wm: '©',
   
   // Sistema de Economía & Progreso 🇭🇳
   kryons: 'Kryons',        // Nombre para mostrar de moneda 1
