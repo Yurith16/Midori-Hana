@@ -1,7 +1,31 @@
 import axios from 'axios'
 import fg from 'fg-senna'
 
-// ─── SCRAPER: ytmp3.gs (primer método) ────────────────────
+// ─── API: Apinexus (primera opción) ───────────────────────
+
+export async function getAudioApinexus(url) {
+  const response = await fetch('https://panel.apinexus.fun/api/youtube/v2/mp3', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json', 
+      'x-api-key': 'antbx21e5jhac' 
+    },
+    body: JSON.stringify({ url })
+  })
+
+  const res = await response.json()
+
+  if (res && res.success && res.data?.audio) {
+    return {
+      url: res.data.audio,
+      title: res.data.titulo,
+      thumb: null
+    }
+  }
+  throw new Error('Apinexus falló')
+}
+
+// ─── SCRAPER: ytmp3.gs ────────────────────────────────────
 
 const _sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 const _ts = () => Math.floor(Date.now() / 1000)
@@ -232,17 +256,18 @@ export async function getAudioFgSenna(url) {
 // ─── Lista de APIs en orden de prioridad ──────────────────
 
 export const audioApis = [
-  { name: 'ytmp3.gs scraper',  get: getAudioYtmp3gs      },
-  { name: 'PrinceTech yta',    get: getAudioPrinceYta    },
-  { name: 'PrinceTech ytmp3',  get: getAudioPrinceYtmp3  },
-  { name: 'PrinceTech ytdl',   get: getAudioPrinceYtdl   },
-  { name: 'PrinceTech ytdlv2', get: getAudioPrinceYtdlv2 },
-  { name: 'PrinceTech dlmp3',  get: getAudioPrinceDlmp3  },
-  { name: 'PrinceTech ytmusic',get: getAudioPrinceYtmusic},
-  { name: 'Delirius v1',       get: getAudioDeliriusV1   },
-  { name: 'Delirius v2',       get: getAudioDeliriusV2   },
-  { name: 'Sylphy',            get: getAudioSylphy       },
-  { name: 'FG-Senna',         get: getAudioFgSenna      }
+  { name: 'Apinexus',           get: getAudioApinexus      },
+  { name: 'ytmp3.gs scraper',   get: getAudioYtmp3gs      },
+  { name: 'PrinceTech yta',     get: getAudioPrinceYta    },
+  { name: 'PrinceTech ytmp3',   get: getAudioPrinceYtmp3  },
+  { name: 'PrinceTech ytdl',    get: getAudioPrinceYtdl   },
+  { name: 'PrinceTech ytdlv2',  get: getAudioPrinceYtdlv2 },
+  { name: 'PrinceTech dlmp3',   get: getAudioPrinceDlmp3  },
+  { name: 'PrinceTech ytmusic', get: getAudioPrinceYtmusic},
+  { name: 'Delirius v1',        get: getAudioDeliriusV1   },
+  { name: 'Delirius v2',        get: getAudioDeliriusV2   },
+  { name: 'Sylphy',             get: getAudioSylphy       },
+  { name: 'FG-Senna',           get: getAudioFgSenna      }
 ]
 
 // ─── Función principal ────────────────────────────────────
