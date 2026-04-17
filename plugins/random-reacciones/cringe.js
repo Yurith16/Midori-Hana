@@ -4,6 +4,7 @@ import { getRealJid } from '../../utils/jid.js'
 
 export default {
   command: ['cringe', 'pena', 'asco'],
+  reaction: true,
   execute: async (sock, msg, { from }) => {
     // 1. Reacción inicial de "qué estoy viendo"
     await sock.sendMessage(from, { react: { text: '😬', key: msg.key } })

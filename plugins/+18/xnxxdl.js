@@ -3,6 +3,7 @@ import config from '../../config.js'
 
 export default {
   command: ['xnxxdl'],
+  nsfw: true,
   execute: async (sock, msg, { args, from, text }) => {
     const url = text || args[0]
 

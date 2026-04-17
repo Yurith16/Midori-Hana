@@ -185,7 +185,6 @@ function getCommandText(text) {
   return { matched: false }
 }
 
-// Resolver número real para mostrar en consola
 async function resolveDisplaySender(sock, sender, msg) {
   try {
     const realJid = await getRealJid(sock, sender, msg)
@@ -308,7 +307,32 @@ export async function handleMessage(sock, msg, store) {
       return
     }
 
-    // Resolver número real para el log
+    // --- VERIFICACIÓN DE NSFW GLOBAL ---
+if (cmd.nsfw && isGroup) {
+  const groupCfg = getGroupConfig(from)
+  const isAdmin = await isGroupAdmin(sock, from, sender)
+
+  // Si el NSFW está apagado Y el que escribe NO es Owner Y NO es Admin
+  if (!groupCfg?.nsfwEnabled && !isUserOwner && !isAdmin) {
+      await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
+      return sock.sendMessage(from, { 
+          text: `> El contenido +18 no está permitido en este grupo 🍃\n> Un admin puede activarlo con: \`.enable nsfw\`` 
+      }, { quoted: msg })
+  }
+}
+// --- VERIFICACIÓN DE REACCIONES GLOBAL ---
+if (cmd.reaction && isGroup) {
+  const groupCfg = getGroupConfig(from)
+  const isAdmin = await isGroupAdmin(sock, from, sender)
+
+  if (!groupCfg?.reactionEnabled && !isUserOwner && !isAdmin) {
+      await sock.sendMessage(from, { react: { text: '🚫', key: msg.key } })
+      return sock.sendMessage(from, { 
+          text: `> Las reacciones interactivas no están permitidas en este grupo 🍃\n> Un admin puede activarlas con: \`.enable reaction\`` 
+      }, { quoted: msg })
+  }
+}
+
     const displaySender = await resolveDisplaySender(sock, sender, msg)
 
     logCommand({

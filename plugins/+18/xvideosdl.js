@@ -4,6 +4,7 @@ import path from 'path'
 import config from '../../config.js' 
 export default {
   command: ['xvideosdl', 'xvdl', 'xvideo'],
+  nsfw: true,
   execute: async (sock, msg, { args, from, text }) => {
     const url = text || args[0]
     // Verificación de Grupo Exclusivo

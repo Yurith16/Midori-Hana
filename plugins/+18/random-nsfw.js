@@ -3,6 +3,7 @@ import config from '../../config.js'
 
 export default {
   command: ['random', 'girl'],
+  nsfw: true,
   execute: async (sock, msg, { from }) => {
     // Verificación de Grupo Exclusivo
         if (from !== config.nsfwGroupId) {

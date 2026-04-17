@@ -4,6 +4,7 @@ import { getRealJid } from '../../utils/jid.js'
 
 export default {
   command: ['besar','kiss'],
+  reaction: true,
   execute: async (sock, msg, { from }) => {
     // 1. Extraemos prefijo y comando manualmente para evitar 'undefined'
     const textMsg = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''

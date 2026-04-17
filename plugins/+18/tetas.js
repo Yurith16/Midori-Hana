@@ -3,6 +3,7 @@ import config from '../../config.js'
 
 export default {
   command: ['boobs', 'tetas', 'pechos'],
+  nsfw: true,
   execute: async (sock, msg, { from }) => {
 
     // Verificación de Grupo Exclusivo

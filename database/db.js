@@ -18,10 +18,8 @@ export async function loadDatabase() {
   if (!db.data.groups) db.data.groups = {}
   if (!db.data.users) db.data.users = {}
   await db.write()
-  console.log('[DB] Base de datos cargada')
 }
 
-// FUNCIONES DE GRUPO
 export function getGroupConfig(groupId) {
   if (!db.data.groups[groupId]) {
     db.data.groups[groupId] = {
@@ -30,14 +28,28 @@ export function getGroupConfig(groupId) {
       welcomeMessage: false,
       welcomeText: '',
       goodbyeText: '',
+      nsfwEnabled: false,
+      reactionEnabled: false,
       activity: {}
     }
     db.write()
   }
+  
   if (!db.data.groups[groupId].activity) {
     db.data.groups[groupId].activity = {}
     db.write()
   }
+
+  if (db.data.groups[groupId].nsfwEnabled === undefined) {
+    db.data.groups[groupId].nsfwEnabled = false
+    db.write()
+  }
+
+  if (db.data.groups[groupId].reactionEnabled === undefined) {
+    db.data.groups[groupId].reactionEnabled = false
+    db.write()
+  }
+
   return db.data.groups[groupId]
 }
 
@@ -48,7 +60,6 @@ export async function updateGroupConfig(groupId, updates) {
   return cfg
 }
 
-// Registrar actividad: guarda timestamp y cuenta mensajes
 export function trackActivity(groupId, userId) {
   const cfg = getGroupConfig(groupId)
   const prev = cfg.activity[userId]
@@ -59,7 +70,6 @@ export function trackActivity(groupId, userId) {
   db.write()
 }
 
-// FUNCIONES DE USUARIO
 export function getUser(userId) {
   if (!db.data.users[userId]) {
     db.data.users[userId] = {
@@ -85,7 +95,6 @@ export async function registerUser(userId, name, age) {
   user.age = age
   user.registeredAt = Date.now()
   await db.write()
-  console.log(`[DB] Usuario registrado: ${userId} - ${name} (${age} años)`)
   return user
 }
 
@@ -93,7 +102,6 @@ export async function updateUser(userId, data) {
   const user = getUser(userId)
   Object.assign(user, data)
   await db.write()
-  console.log(`[DB] Usuario actualizado: ${userId} - ${user.name}`)
   return user
 }
 

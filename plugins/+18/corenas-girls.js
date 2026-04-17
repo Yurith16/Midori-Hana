@@ -3,6 +3,7 @@ import config from '../../config.js'
 
 export default {
     command: ['coreanas'],
+    nsfw: true,
     group: false,
     owner: false,
 
