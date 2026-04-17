@@ -1,5 +1,5 @@
 import { getRealJid, cleanNumber } from '../../utils/jid.js'
-import { registerUser, getUser } from '../../database/db.js'
+import { getUser } from '../../database/db.js'
 import config from '../../config.js'
 
 export default {
@@ -9,39 +9,43 @@ export default {
 
     async execute(sock, msg, { from, sender }) {
         try {
-            const userId = sender
-            const user = getUser(userId)
+            const realJid = await getRealJid(sock, sender, msg)
+            const realNumber = cleanNumber(realJid)
+            const user = getUser(realNumber)
 
-            const perfil = `
-✨ *PERFIL DE USUARIO* ✨
-──────────────────
-👤 *Nombre:* ${user.name || 'Sin registrar'}
-🎂 *Edad:* ${user.age || '??'} años
-✨ *Nivel:* ${user.level} (${user.exp} EXP)
-
-${config.emojiKryons} *${config.kryons}:* ${user.kryons}
-${config.emojiJade} *${config.jade}:* ${user.jade}
-──────────────────
-🌿 *${config.botName}*
-`.trim()
-
-            let pp
-            try {
-                // Intentamos obtener la foto de perfil del usuario
-                pp = await sock.profilePictureUrl(userId, 'image')
-            } catch {
-                // Si no tiene foto o da error, usamos la del config
-                pp = config.defaultImg
+            if (!user?.name) {
+                return sock.sendMessage(from, { 
+                    text: `> 🌸 *${config.botName}*\n> Regístrate primero con .register nombre edad 🍃` 
+                }, { quoted: msg })
             }
 
-            await sock.sendMessage(from, {
-                image: { url: pp },
-                caption: perfil,
-                mentions: [userId]
-            }, { quoted: msg })
+            const fechaRegistro = new Date(user.registeredAt).toLocaleDateString('es-HN')
+            
+            const perfil = `> 🌸 *${user.name}* (${user.age} años) 🌸\n\n` +
+                           `> 📅 Registrado: ${fechaRegistro}\n` +
+                           `> ⭐ Nivel: ${user.level}\n` +
+                           `> ✨ EXP: ${user.exp}\n\n` +
+                           `> 🍃 *${config.botName}*`
+
+            let pp = null
+            try {
+                pp = await sock.profilePictureUrl(sender, 'image')
+            } catch (err) {
+                // Sin foto, no hacemos nada
+            }
+
+            if (pp) {
+                await sock.sendMessage(from, {
+                    image: { url: pp },
+                    caption: perfil
+                }, { quoted: msg })
+            } else {
+                await sock.sendMessage(from, { text: perfil }, { quoted: msg })
+            }
 
         } catch (error) {
-            console.error('Error en el comando perfil:', error)
+            console.error('Error en perfil:', error)
+            await sock.sendMessage(from, { text: `> ❌ Error al cargar perfil. 🍃` }, { quoted: msg })
         }
     }
 }
