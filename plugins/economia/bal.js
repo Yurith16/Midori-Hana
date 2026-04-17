@@ -1,24 +1,35 @@
-import { getRealJid, cleanNumber } from '../../utils/jid.js'
+import { getRealJid } from '../../utils/jid.js'
 import { getUser } from '../../database/db.js'
-import cfg from '../../config.js'
+import config from '../../config.js'
 
 export default {
     command: ['balance', 'bal', 'dinero'],
-    execute: async (sock, msg, { from }) => {
-        const userId = msg.key.participant || from
-        const realNumber = cleanNumber(await getRealJid(sock, userId, msg))
-        const user = getUser(realNumber)
-        
-        if (!user.name || !user.age) {
-            return sock.sendMessage(from, { text: '> 🍃 necesitas estar en mi base de datos para usar estos comandos.' }, { quoted: msg })
+    execute: async (sock, msg, { from, sender }) => {
+        try {
+            const realJid = await getRealJid(sock, sender, msg)
+            const user = getUser(realJid)
+
+            if (!user?.name) {
+                return sock.sendMessage(from, { 
+                    text: `🌸 Regístrate primero con .register nombre edad 🍃` 
+                }, { quoted: msg })
+            }
+
+            const kryons = user.kryons.toLocaleString()
+            const jade = user.jade.toLocaleString()
+            const exp = user.exp.toLocaleString()
+
+            const txt = `> 🌸 Este es tu balance, *${user.name}*. Sigue así. 🍃\n` +
+                        `> 💎 *${config.kryons}:* ${kryons}\n` +
+                        `> 💎 *${config.jade}:* ${jade}\n` +
+                        `> ✨ *${config.exp}:* ${exp}\n` +
+                        `> ⭐ *Nivel:* ${user.level}`
+
+            await sock.sendMessage(from, { react: { text: '💰', key: msg.key } })
+            await sock.sendMessage(from, { text: txt }, { quoted: msg })
+
+        } catch (e) {
+            await sock.sendMessage(from, { text: `> ❌ Error. 🍃` }, { quoted: msg })
         }
-        
-        const txt = `> 👤 *${user.name}* (${user.age} años)\n\n` +
-                    `> ${cfg.emojiKryons} *Kryons:* ${user.kryons}\n` +
-                    `> ${cfg.emojiJade} *Jade:* ${user.jade}\n` +
-                    `> ${cfg.emojiExp} *EXP:* ${user.exp}\n` +
-                    `> ⭐ *Nivel:* ${user.level}`
-        
-        await sock.sendMessage(from, { text: txt }, { quoted: msg })
     }
 }

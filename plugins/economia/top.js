@@ -1,37 +1,46 @@
 import db from '../../database/db.js'
-import cfg from '../../config.js'
+import config from '../../config.js'
 
 export default {
-    command: ['top', 'leaderboard', 'ranking'],
+    command: ['top', 'ranking', 'leaderboard'],
     execute: async (sock, msg, { from }) => {
-        // Obtenemos todos los usuarios de la base de datos
-        const usersData = db.data.users
-        const userList = Object.entries(usersData)
+        try {
+            const users = db.data.users
+            const ranking = Object.entries(users)
+                .filter(([_, data]) => data.name && data.name.trim() !== '')
+                .map(([id, data]) => ({
+                    name: data.name,
+                    kryons: data.kryons || 0,
+                    exp: data.exp || 0,
+                    level: data.level || 1
+                }))
+                .sort((a, b) => b.kryons - a.kryons)
+                .slice(0, 15)
 
-        // Mapeamos y filtramos solo los que tienen nombre (están registrados)
-        const topUsers = userList
-            .map(([jid, data]) => ({ jid, ...data }))
-            .filter(user => user.name) 
-            // Ordenamos de mayor a menor según sus Kryons
-            .sort((a, b) => b.kryons - a.kryons)
-            .slice(0, 10) // Solo los 10 mejores
+            if (ranking.length === 0) {
+                return sock.sendMessage(from, { 
+                    text: `> 🌸 Aún no hay usuarios registrados. 🍃` 
+                }, { quoted: msg })
+            }
 
-        if (topUsers.length === 0) {
-            return sock.sendMessage(from, { text: '> 🍃 No hay usuarios registrados en el ranking todavía.' }, { quoted: msg })
+            let txt = `> 🌸 *TOP 15 RIQUEZA* 🌸\n\n`
+            
+            for (let i = 0; i < ranking.length; i++) {
+                const user = ranking[i]
+                const medal = i === 0 ? '👑' : i === 1 ? '🥈' : i === 2 ? '🥉' : '📍'
+                txt += `> ${medal} *${i + 1}.* ${user.name}\n`
+                txt += `>    💎 ${user.kryons.toLocaleString()} ${config.kryons}\n`
+                txt += `>    ✨ Nivel ${user.level}\n\n`
+            }
+
+            txt += `> 🍃 Sigue minando para subir en el ranking.`
+
+            await sock.sendMessage(from, { react: { text: '🏆', key: msg.key } })
+            await sock.sendMessage(from, { text: txt }, { quoted: msg })
+
+        } catch (e) {
+            console.error('Error en top:', e)
+            await sock.sendMessage(from, { text: `> ❌ Error al cargar el ranking. 🍃` }, { quoted: msg })
         }
-
-        let txt = `> 🏆 *TOP 10 USUARIOS MÁS RICOS*\n\n`
-        
-        topUsers.forEach((user, index) => {
-            const medalla = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '👤'
-            txt += `> ${medalla} *${index + 1}. ${user.name}*\n`
-            txt += `> 💠 ${user.kryons} ${cfg.kryons} | ⭐ Lvl: ${user.level}\n`
-            txt += `> ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n`
-        })
-
-        txt += `\n> 🍃 ¡Sigue activo para subir en el ranking de ${cfg.botName}!`
-
-        await sock.sendMessage(from, { react: { text: '🏆', key: msg.key } })
-        await sock.sendMessage(from, { text: txt }, { quoted: msg })
     }
 }

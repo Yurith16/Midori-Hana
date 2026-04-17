@@ -1,38 +1,53 @@
-import { getRealJid, cleanNumber } from '../../utils/jid.js'
+import { getRealJid } from '../../utils/jid.js'
 import { getUser, updateUser } from '../../database/db.js'
-import cfg from '../../config.js'
+import config from '../../config.js'
 
 export default {
     command: ['daily', 'diario'],
-    execute: async (sock, msg, { from }) => {
-        const userId = msg.key.participant || from
-        const realNumber = cleanNumber(await getRealJid(sock, userId, msg))
-        const user = getUser(realNumber)
-        
-        if (!user.name || !user.age) {
-            return sock.sendMessage(from, { text: '> 🍃 necesitas estar en mi base de datos para usar estos comandos.' }, { quoted: msg })
-        }
-        
-        const tiempo = 24 * 60 * 60 * 1000
-        if (Date.now() - user.dailyLast < tiempo) {
-            const restante = tiempo - (Date.now() - user.dailyLast)
-            const horas = Math.floor(restante / (1000 * 60 * 60))
-            return sock.sendMessage(from, { text: `> ⏳ Ya reclamaste tu regalo, vuelve en *${horas}h* 🌿` }, { quoted: msg })
-        }
+    execute: async (sock, msg, { from, sender }) => {
+        try {
+            const realJid = await getRealJid(sock, sender, msg)
+            const user = getUser(realJid)
 
-        const premio = 500
-        const nuevosKryons = user.kryons + premio
-        
-        // Guardar en base de datos
-        await updateUser(realNumber, { 
-            kryons: nuevosKryons, 
-            dailyLast: Date.now() 
-        })
-        
-        const txt = `> ${cfg.emojiKryons} haz reclamado: *${premio} ${cfg.kryons}*\n\n` +
-                    `> 🍃 Vuelve mañana por más`
-        
-        await sock.sendMessage(from, { text: txt }, { quoted: msg })
-        await sock.sendMessage(from, { react: { text: '🎁', key: msg.key } })
+            if (!user?.name) {
+                return sock.sendMessage(from, { 
+                    text: `🌸 Cariño, no te encuentro en mi lista. Regístrate con .reg nombre edad 🍃` 
+                }, { quoted: msg })
+            }
+
+            const now = Date.now()
+            const cooldown = 24 * 60 * 60 * 1000 // 24 horas
+            
+            if (now - (user.dailyLast || 0) < cooldown) {
+                const rem = cooldown - (now - user.dailyLast)
+                const hours = Math.floor(rem / 3600000)
+                const minutes = Math.floor((rem % 3600000) / 60000)
+                return sock.sendMessage(from, { 
+                    text: `⏳ *${user.name}*, ya reclamaste tu recompensa hoy. Vuelve en *${hours}h ${minutes}m*... 🌸` 
+                }, { quoted: msg })
+            }
+
+            // Recompensas aumentadas
+            const kryonsBase = 1000
+            const expBase = 80
+            const bonus = Math.floor(Math.random() * 500) // Bonus aleatorio hasta 500
+            
+            const recompensa = kryonsBase + bonus
+            const exp = expBase
+
+            await updateUser(realJid, {
+                kryons: (user.kryons || 0) + recompensa,
+                exp: (user.exp || 0) + exp,
+                dailyLast: now
+            })
+
+            await sock.sendMessage(from, { react: { text: '🎁', key: msg.key } })
+            await sock.sendMessage(from, { 
+                text: `🎁 *${user.name}* recibió su recompensa diaria: *${recompensa}* ${config.kryons} (bonus +${bonus}) y *${exp}* ${config.exp}. 🌸🍃` 
+            }, { quoted: msg })
+
+        } catch (e) {
+            await sock.sendMessage(from, { text: `❌ No pude darte tu recompensa. Intenta luego. 🍃` }, { quoted: msg })
+        }
     }
 }

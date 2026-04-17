@@ -1,57 +1,48 @@
+import { getRealJid } from '../../utils/jid.js'
 import { getUser, updateUser } from '../../database/db.js'
 import config from '../../config.js'
 
 export default {
     command: ['minar', 'mine'],
-    group: false,
-    owner: false,
-
-    async execute(sock, msg, { from, sender }) {
+    execute: async (sock, msg, { from, sender }) => {
         try {
-            const user = getUser(sender)
-            
-            // Validar registro
-            if (!user || !user.name) {
+            const realJid = await getRealJid(sock, sender, msg)
+            const user = getUser(realJid)
+
+            if (!user?.name) {
                 return sock.sendMessage(from, { 
-                    text: `> ⚠️ *Acceso Denegado*\n\n> Debes registrarte primero para poder usar el sistema de minería.\n> Usa: *${config.prefix}reg nombre edad* 🍃` 
+                    text: `🌸 Cariño, no te encuentro en mi lista. Regístrate con .reg nombre edad 🍃` 
                 }, { quoted: msg })
             }
 
             const now = Date.now()
-            const cooldown = 10 * 60 * 1000 // 10 minutos
+            const cooldown = 10 * 60 * 1000
             
-            // Verificación de Cooldown
-            if (now - user.workLast < cooldown) {
-                const remaining = cooldown - (now - user.workLast)
-                const minutes = Math.floor(remaining / 60000)
-                const seconds = Math.floor((remaining % 60000) / 1000)
-                
+            if (now - (user.workLast || 0) < cooldown) {
+                const rem = cooldown - (now - user.workLast)
+                const min = Math.floor(rem / 60000)
+                const sec = Math.floor((rem % 60000) / 1000)
                 return sock.sendMessage(from, { 
-                    text: `> ⏳ Espera *${minutes}m ${seconds}s* antes de volver a minar. 🍃` 
+                    text: `⏳ Tus manos aún tiemblan por el esfuerzo, *${user.name}*. Descansa *${min}m ${sec}s* más... 🌸` 
                 }, { quoted: msg })
             }
 
-            // Lógica de minado variable
-            const cantidadMinada = Math.floor(Math.random() * (250 - 50 + 1)) + 50
-            const expGanada = Math.floor(Math.random() * 30) + 10
+            const minado = Math.floor(Math.random() * 200) + 50
+            const exp = Math.floor(Math.random() * 25) + 10
 
-            // Actualizar base de datos
-            await updateUser(sender, {
-                kryons: user.kryons + cantidadMinada,
-                exp: user.exp + expGanada,
+            await updateUser(realJid, {
+                kryons: (user.kryons || 0) + minado,
+                exp: (user.exp || 0) + exp,
                 workLast: now
             })
 
-            // Diseño final solicitado
-            const txt = `> 👤 *${user.name}* (${user.age} años)\n\n` +
-                        `> Ohh!! *${user.name}*, has minado *${cantidadMinada}* ${config.kryons} ${config.emojiKryons} y *${expGanada}* de ${config.exp} ${config.emojiExp}.`
-
             await sock.sendMessage(from, { react: { text: '⛏️', key: msg.key } })
-            await sock.sendMessage(from, { text: txt }, { quoted: msg })
+            await sock.sendMessage(from, { 
+                text: `⛏️ *${user.name}* encontró una veta preciosa: obtuvo *${minado}* ${config.kryons} y *${exp}* ${config.exp}. 🌸🍃` 
+            }, { quoted: msg })
 
-        } catch (error) {
-            console.error('Error en el comando minar:', error)
-            await sock.sendMessage(from, { text: '> ❌ Error en la base de datos de Midori. 🍃' }, { quoted: msg })
+        } catch (e) {
+            await sock.sendMessage(from, { text: `❌ El túnel se derrumbó... intenta luego. 🍃` }, { quoted: msg })
         }
     }
 }

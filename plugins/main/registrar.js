@@ -1,53 +1,49 @@
-import { registerUser } from '../../database/db.js'
+import { getRealJid, cleanNumber } from '../../utils/jid.js'
+import { registerUser, getUser } from '../../database/db.js'
 import config from '../../config.js'
 
 export default {
-    command: ['reg', 'registrar', 'registrarme'],
-    group: false,
-    owner: false,
+  command: ['register', 'reg'],
+  group: false,
+  owner: false,
 
-    async execute(sock, msg, { args, from, sender }) {
-        try {
-            // Verificamos que se pasen ambos argumentos
-            if (!args[0] || !args[1]) {
-                return sock.sendMessage(from, {
-                    text: `> ⚠️ Formato incorrecto.\n> Usa: *${config.prefix}reg nombre edad*\n> Ejemplo: *${config.prefix}reg Hernandez 20* 🍃`
-                }, { quoted: msg })
-            }
-
-            const name = args[0]
-            const age = parseInt(args[1])
-
-            // Validaciones básicas de edad
-            if (isNaN(age)) {
-                return sock.sendMessage(from, { text: '> ⚠️ La edad debe ser un número válido. 🍃' }, { quoted: msg })
-            }
-
-            if (age < 5 || age > 99) {
-                return sock.sendMessage(from, { text: '> ⚠️ Por favor, ingresa una edad realista. 🍃' }, { quoted: msg })
-            }
-
-            // Guardamos en la base de datos
-            await registerUser(sender, name, age)
-
-            const regMsg = `
-✅ *REGISTRO EXITOSO*
-──────────────────
-👤 *Nombre:* ${name}
-🎂 *Edad:* ${age} años
-✨ *Bono:* +100 ${config.kryons}
-
-> Ya puedes usar *${config.prefix}perfil* para ver tus datos.
-──────────────────
-🌿 *${config.botName}*
-`.trim()
-
-            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
-            await sock.sendMessage(from, { text: regMsg }, { quoted: msg })
-
-        } catch (error) {
-            console.error('Error en el comando registro:', error)
-            await sock.sendMessage(from, { text: '> ❌ Ocurrió un error al intentar registrarte. 🍃' }, { quoted: msg })
-        }
+  async execute(sock, msg, { args, from, sender }) {
+    const realJid = await getRealJid(sock, sender, msg)
+    const realNumber = cleanNumber(realJid)  // ← Limpiar antes de usar
+    
+    const user = getUser(realNumber)
+    
+    if (user.name && user.age) {
+      await sock.sendMessage(from, { 
+        text: `> ✅ Ya estás registrado ${user.name} (${user.age} años)\n\n> 👛 Balance: ${user.kryons} ${config.emojiKryons}` 
+      }, { quoted: msg })
+      return
     }
+    
+    if (!args[0]) {
+      await sock.sendMessage(from, { 
+        text: `> ¿Qué datos deseas registrar? 🍃\n\n> Ejemplo: .register Juan 25` 
+      }, { quoted: msg })
+      return
+    }
+    
+    const name = args[0]
+    const age = parseInt(args[1])
+    
+    if (!name || !age || isNaN(age) || age < 1 || age > 120) {
+      await sock.sendMessage(from, { 
+        text: `> ❌ Formato incorrecto\n\n> Usa: .register <nombre> <edad>\n> Ejemplo: .register Juan 25` 
+      }, { quoted: msg })
+      return
+    }
+    
+    await registerUser(realNumber, name, age)
+    
+    const newUser = getUser(realNumber)
+    
+    await sock.sendMessage(from, { 
+      text: `> ✅ *Registro completado*\n\n> 👤 Nombre: ${name}\n> 🎂 Edad: ${age} años\n> 👛 Balance: ${newUser.kryons} ${config.emojiKryons}\n\n> 🍃 Bienvenido a ${config.botName}` 
+    }, { quoted: msg })
+    await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
+  }
 }

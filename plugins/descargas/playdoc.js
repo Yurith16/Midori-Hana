@@ -16,7 +16,7 @@ function execPromise(cmd) {
 }
 
 export default {
-  command: ['play', 'ytmp3'],
+  command: ['playdoc', 'ytmp3doc'],
   group: false,
   owner: false,
 
@@ -35,10 +35,9 @@ export default {
     try {
       let videoUrl = args[0]
       let videoTitle = ''
-      let duration = '0:00'
-      let ytThumb = '' // Variable para guardar la miniatura real de YT
+      let ytThumb = '' // Variable para la miniatura real
       
-      // Si no es URL, buscamos en YouTube
+      // Lógica de búsqueda e imagen
       if (!videoUrl.match(/youtu/gi)) {
         const search = await yts(args.join(' '))
         const video = search.videos.find(v => v.type === 'video') || search.videos[0]
@@ -46,21 +45,20 @@ export default {
         if (!video) throw new Error('No encontrado')
         videoUrl = video.url
         videoTitle = video.title
-        duration = video.timestamp
-        ytThumb = video.thumbnail // Guardamos la imagen real del video encontrado
+        ytThumb = video.thumbnail || video.image
       } else {
-        // Si el usuario envió una URL directa, también buscamos su info para la imagen
-        const search = await yts({ videoId: videoUrl.split('v=')[1] || videoUrl.split('/').pop() })
+        // Si es link, extraemos el ID para buscar su miniatura real
+        const videoId = videoUrl.split('v=')[1]?.split('&')[0] || videoUrl.split('/').pop()
+        const search = await yts({ videoId })
         ytThumb = search.thumbnail || search.image
         videoTitle = search.title
-        duration = search.timestamp
       }
       
       const result = await getAudio(videoUrl)
       if (!result || !result.url) throw new Error('API sin respuesta')
 
       const title = result.title || videoTitle
-      // PRIORIDAD: Usamos ytThumb (la de la búsqueda) antes que la de la API
+      // Prioridad a la imagen de YouTube
       const thumb = ytThumb || result.thumb || config.defaultImg
       const audioUrl = result.url
       const needsConversion = result.needsConversion || false
@@ -70,30 +68,34 @@ export default {
       if (needsConversion) {
         tempFile = path.join(TEMP_DIR, `${Date.now()}.tmp`)
         const response = await fetch(audioUrl)
+        if (!response.ok) throw new Error('Fallo descarga temporal')
+        
         const buffer = Buffer.from(await response.arrayBuffer())
         fs.writeFileSync(tempFile, buffer)
         
         convertedFile = path.join(TEMP_DIR, `${Date.now()}.mp3`)
         await execPromise(`"${ffmpegPath}" -i "${tempFile}" -acodec libmp3lame -ab 128k -ar 44100 -preset ultrafast "${convertedFile}" 2>/dev/null`)
         
+        if (!fs.existsSync(convertedFile)) throw new Error('Error en conversión')
         finalBuffer = fs.readFileSync(convertedFile)
       } else {
         const response = await fetch(audioUrl)
+        if (!response.ok) throw new Error('Fallo descarga directa')
         finalBuffer = Buffer.from(await response.arrayBuffer())
       }
 
-      const finalSizeMB = (finalBuffer.length / 1024 / 1024).toFixed(2)
       const cleanName = `${title.substring(0, 30).replace(/[<>:"/\\|?*]/g, '')} - ${config.botName}`
 
+      // Envío como DOCUMENTO
       const sentMsg = await sock.sendMessage(from, {
-        audio: finalBuffer,
+        document: finalBuffer,
         mimetype: 'audio/mpeg',
         fileName: `${cleanName}.mp3`,
         contextInfo: {
           externalAdReply: {
-            title: `🎵 ${title}`,
-            body: `${duration} • ${finalSizeMB} MB • YouTube`,
-            thumbnailUrl: thumb, // Aquí ya va la imagen corregida
+            title: `🍃 ${config.botName}`,
+            body: title,
+            thumbnailUrl: thumb, // Imagen corregida aquí
             sourceUrl: videoUrl,
             mediaType: 1,
             renderLargerThumbnail: true
@@ -105,7 +107,7 @@ export default {
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
       
     } catch (err) {
-      console.error('Error en Play:', err.message)
+      console.error('Error en PlayDoc:', err.message)
       await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
     } finally {
       if (tempFile && fs.existsSync(tempFile)) fs.unlinkSync(tempFile)
