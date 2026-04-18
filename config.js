@@ -1,11 +1,11 @@
 export default {
   botName: '𝑴𝒊𝒅𝒐𝒓𝒊-𝑯𝒂𝒏𝒂',
-  ownerName: 'HERNANDEZ',
+  ownerName: 'Hernandez',
   ownerNumbers: ['50496926150'],
   botNumber: '50432821762',
   useQR: true,
   prefix: '*',
-  sessionName: 'kari-session',
+  sessionName: 'Midori-session',
   autoRead: false,
   autoBio: false,
   antiCall: true,
@@ -17,22 +17,13 @@ export default {
   nsfwMessage: '> 🍃 Este comando solo funciona en el grupo exclusivo para adultos.\n\n> 🔗 Únete aquí: https://chat.whatsapp.com/IYM42pfeB4Q3r902v0MBzy',
   soporte: 'https://wa.me/50496926150',
   wm: '©',
-  
-  // Sistema de Economía & Progreso 🇭🇳
-  kryons: 'Kryons',        // Nombre para mostrar de moneda 1
-  jade: 'Jade',            // Nombre para mostrar de moneda 2
-  exp: 'EXP',              // Nombre para mostrar de la experiencia
 
-  // Emojis de Economía (Centralizados)
-  emojiKryons: '💠',
-  emojiJade: '💹',
-  emojiExp: '✨',
-  
+  //welcome
   welcomeText: '👋 Bienvenido {name} al grupo 🍃',
   goodbyeText: '👋 se salió un puto del grupo 🌿',
   
   stickerPack: '',
-  stickerAuthor: '© kari bot',
+  stickerAuthor: ' 𝑴𝒊𝒅𝒐𝒓𝒊-𝑯𝒂𝒏𝒂 ',
   
   maintenance: false,
   maintenanceMessage: '🔧 Bot en mantenimiento, vuelve pronto',
@@ -45,8 +36,5 @@ export default {
   antiLinkMessage: '🔗 No se permiten enlaces de Telegram ni WhatsApp en este grupo',
   
   adminModeMessage: '👮‍♂️ Este grupo está en modo admin. Solo administradores pueden usar comandos.',
-  
-  // Control de horarios (Honduras)
-  activeHours: { start: 6, end: 22 }, // de 6am a 11pm
-  offlineMessage: '😴 El bot está descansando, vuelve pronto'
+ 
 }

@@ -5,7 +5,7 @@ import { jidNormalizedUser, getContentType, proto, downloadContentFromMessage, g
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logPlugin, logMessage, logEvent } from './utils/logger.js'
 import { watchPlugins } from './utils/pluginWatcher.js'
-import { getGroupConfig, loadDatabase, trackActivity } from './database/db.js'
+import { getGroupConfig, loadDatabase, trackActivity, updateGroupName } from './database/db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -32,7 +32,7 @@ fs.watch(path.join(__dirname, 'config.js'), () => reloadConfig())
 async function reloadPlugins() {
   logEvent('Plugins', 'Recargando...')
   commands.clear()
-  
+
   const pluginsDir = path.join(__dirname, 'plugins')
   if (!fs.existsSync(pluginsDir)) return
 
@@ -142,12 +142,6 @@ async function loadCommands() {
   logEvent('Comandos', `${commands.size} disponibles`)
 }
 
-function getHondurasHour() {
-  const now = new Date()
-  const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
-  return hondurasTime.getHours()
-}
-
 const LINK_REGEX = /(?:https?:\/\/)?(?:www\.)?(?:chat\.whatsapp\.com|wa\.me|whatsapp\.com|t\.me|telegram\.me|telegram\.dog|telegramchannels\.me|t\.dog)\/[^\s]*/i
 
 function hasLink(text) {
@@ -196,15 +190,15 @@ async function resolveDisplaySender(sock, sender, msg) {
 
 export async function handleMessage(sock, msg, store) {
   if (!config) return
-  
+
   if (!sock.generateWAMessageFromContent) {
     sock.generateWAMessageFromContent = generateWAMessageFromContent
   }
-  
+
   try {
     const from = msg.key.remoteJid
     if (!from) return
-    
+
     const isGroup = from.endsWith('@g.us')
     const sender = msg.key.participant || from
     const isUserOwner = await isOwner(sock, sender, msg, msg.key.fromMe)
@@ -215,18 +209,12 @@ export async function handleMessage(sock, msg, store) {
       trackActivity(from, sender)
     }
 
-    // Control de horarios (Honduras)
-    const currentHour = getHondurasHour()
-    const isActiveHour = currentHour >= config.activeHours.start && currentHour < config.activeHours.end
-
-    if (!isActiveHour && !isUserOwner) {
-      const now = new Date()
-      const hondurasTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Tegucigalpa' }))
-      const horaFormateada = hondurasTime.toLocaleTimeString('es-HN', { hour: '2-digit', minute: '2-digit' })
-      await sock.sendMessage(from, { text: `${config.offlineMessage}\n\n> Bot disponible de ${config.activeHours.start}:00 a ${config.activeHours.end}:00\n> Hora actual en Honduras: ${horaFormateada}` }, { quoted: msg })
-      return
+    // Guardar nombre del grupo en DB
+    if (isGroup) {
+      const gName = await getGroupName(sock, from)
+      if (gName) updateGroupName(from, gName)
     }
-    
+
     const groupCfg = isGroup ? getGroupConfig(from) : null
 
     // AntiLink
@@ -241,15 +229,6 @@ export async function handleMessage(sock, msg, store) {
           } catch {}
           return
         }
-      }
-    }
-
-    // Modo admin
-    if (isGroup && groupCfg?.adminMode && !isUserOwner) {
-      const isAdmin = await isGroupAdmin(sock, from, sender)
-      if (!isAdmin) {
-        await sock.sendMessage(from, { text: config.adminModeMessage }, { quoted: msg })
-        return
       }
     }
 
@@ -281,6 +260,15 @@ export async function handleMessage(sock, msg, store) {
     const cmd = commands.get(cmdName)
     if (!cmd) return
 
+    // Modo admin — solo bloquea comandos, no mensajes normales
+    if (isGroup && groupCfg?.adminMode && !isUserOwner) {
+      const isAdmin = await isGroupAdmin(sock, from, sender)
+      if (!isAdmin) {
+        await sock.sendMessage(from, { text: config.adminModeMessage }, { quoted: msg })
+        return
+      }
+    }
+
     if (config.maintenance && !isUserOwner) {
       await sock.sendMessage(from, { text: config.maintenanceMessage }, { quoted: msg })
       return
@@ -307,31 +295,12 @@ export async function handleMessage(sock, msg, store) {
       return
     }
 
-    // --- VERIFICACIÓN DE NSFW GLOBAL ---
-if (cmd.nsfw && isGroup) {
-  const groupCfg = getGroupConfig(from)
-  const isAdmin = await isGroupAdmin(sock, from, sender)
-
-  // Si el NSFW está apagado Y el que escribe NO es Owner Y NO es Admin
-  if (!groupCfg?.nsfwEnabled && !isUserOwner && !isAdmin) {
+    // Verificar NSFW
+    if (cmd.nsfw && isGroup && !groupCfg?.nsfwEnabled && !isUserOwner) {
       await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
-      return sock.sendMessage(from, { 
-          text: `> El contenido +18 no está permitido en este grupo 🍃\n> Un admin puede activarlo con: \`.enable nsfw\`` 
-      }, { quoted: msg })
-  }
-}
-// --- VERIFICACIÓN DE REACCIONES GLOBAL ---
-if (cmd.reaction && isGroup) {
-  const groupCfg = getGroupConfig(from)
-  const isAdmin = await isGroupAdmin(sock, from, sender)
-
-  if (!groupCfg?.reactionEnabled && !isUserOwner && !isAdmin) {
-      await sock.sendMessage(from, { react: { text: '🚫', key: msg.key } })
-      return sock.sendMessage(from, { 
-          text: `> Las reacciones interactivas no están permitidas en este grupo 🍃\n> Un admin puede activarlas con: \`.enable reaction\`` 
-      }, { quoted: msg })
-  }
-}
+      await sock.sendMessage(from, { text: '> El contenido +18 no está permitido en este grupo 🍃\n> Un admin puede activarlo con `.enable nsfw`' }, { quoted: msg })
+      return
+    }
 
     const displaySender = await resolveDisplaySender(sock, sender, msg)
 
