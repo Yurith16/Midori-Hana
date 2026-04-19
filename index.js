@@ -18,6 +18,7 @@ import handler from './handler.js'
 import { startAutoBio } from './utils/autobio.js'
 import { cleanupPuppeteerCache } from './utils/cleanup.js'
 import { getGroupConfig } from './database/db.js'
+global.handler = handler
 import { 
   logConnection, 
   logError, 
