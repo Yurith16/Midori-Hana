@@ -1,5 +1,5 @@
 export default {
-  command: ['kick', 'expulsar'],
+  command: ['kick', 'hakai'],
   group: true,
   owner: false,
 

@@ -5,17 +5,17 @@ import { fileURLToPath } from 'url'
 import { cleanNumber } from '../utils/jid.js'
 
 const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const file = path.join(__dirname, '..', 'database.json')
+const __dirname  = path.dirname(__filename)
+const file       = path.join(__dirname, '..', 'database.json')
 
 const defaultData = { groups: {} }
-const adapter = new JSONFile(file)
-const db = new Low(adapter, defaultData)
+const adapter     = new JSONFile(file)
+const db          = new Low(adapter, defaultData)
 
 export async function loadDatabase() {
   await db.read()
-  if (!db.data) db.data = defaultData
-  if (!db.data.groups) db.data.groups = {}
+  if (!db.data)         db.data = defaultData
+  if (!db.data.groups)  db.data.groups = {}
   await db.write()
   console.log('[DB] Base de datos cargada')
 }
@@ -41,16 +41,12 @@ export function getGroupConfig(groupId) {
   }
 
   const g = db.data.groups[groupId]
-
-  // Blindaje: Asegurar que los objetos internos existan siempre
-  if (!g.activity)   { g.activity = {};   db.write() }
-  if (!g.warns)      { g.warns = {};      db.write() }
-  if (!g.mutedUsers) { g.mutedUsers = {}; db.write() }
-
-  if (g.groupName       === undefined) { g.groupName = '';       db.write() }
-  if (g.nsfwEnabled     === undefined) { g.nsfwEnabled = false;  db.write() }
-  if (g.reactionEnabled === undefined) { g.reactionEnabled = false; db.write() }
-
+  if (!g.activity)                       { g.activity = {};           db.write() }
+  if (!g.warns)                          { g.warns = {};              db.write() }
+  if (!g.mutedUsers)                     { g.mutedUsers = {};         db.write() }
+  if (g.groupName       === undefined)   { g.groupName = '';          db.write() }
+  if (g.nsfwEnabled     === undefined)   { g.nsfwEnabled = false;     db.write() }
+  if (g.reactionEnabled === undefined)   { g.reactionEnabled = false; db.write() }
   return g
 }
 
@@ -72,8 +68,8 @@ export function updateGroupName(groupId, name) {
 // ─── ACTIVIDAD ────────────────────────────────────────────
 
 export function trackActivity(groupId, userId) {
-  const cfg = getGroupConfig(groupId)
-  const id  = cleanNumber(userId)
+  const cfg  = getGroupConfig(groupId)
+  const id   = cleanNumber(userId)
   const prev = cfg.activity[id]
   cfg.activity[id] = {
     last:  Date.now(),
@@ -120,19 +116,14 @@ export function resetWarns(groupId, userId) {
 }
 
 export function getAllWarns(groupId) {
-  const cfg = getGroupConfig(groupId)
-  return cfg.warns || {}
+  return getGroupConfig(groupId).warns || {}
 }
 
-// ─── MUTE SYSTEM ──────────────────────────────────────────
+// ─── MUTE ─────────────────────────────────────────────────
 
 export function setMute(groupId, userId, status = true) {
   const cfg = getGroupConfig(groupId)
-  const id = cleanNumber(userId)
-
-  // Inicialización de seguridad local
-  if (!cfg.mutedUsers) cfg.mutedUsers = {}
-
+  const id  = cleanNumber(userId)
   if (status) {
     cfg.mutedUsers[id] = true
   } else {
@@ -143,10 +134,8 @@ export function setMute(groupId, userId, status = true) {
 
 export function isUserMuted(groupId, userId) {
   const cfg = getGroupConfig(groupId)
-  const id = cleanNumber(userId)
-
-  // Retorna true solo si el usuario existe en el objeto y su valor es true
-  return cfg.mutedUsers && cfg.mutedUsers[id] === true
+  const id  = cleanNumber(userId)
+  return cfg.mutedUsers?.[id] === true
 }
 
 export default db
