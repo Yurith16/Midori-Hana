@@ -3,23 +3,27 @@ import '../../config.js'
 import { getRealJid } from '../../utils/jid.js'
 
 export default {
-  command: ['golpear', 'golpe', 'patada'],
+  command: ['sonrojar', 'blush', 'penita', 'tímido'],
   reaction: true,
   execute: async (sock, msg, { from }) => {
+    // 1. Extraemos el comando para el texto
     const textMsg = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
-    const usedCommand = textMsg.split(' ')[0].slice(1) || 'golpe'
+    const usedCommand = textMsg.split(' ')[0].slice(1) || 'sonrojar'
 
+    // 2. Detectar objetivo (mencionado o citado)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo
     const targetJid = contextInfo?.participant || contextInfo?.mentionedJid?.[0]
 
-    await sock.sendMessage(from, { react: { text: '🥊', key: msg.key } })
+    // 3. Reacción inicial de ternura
+    await sock.sendMessage(from, { react: { text: '😊', key: msg.key } })
 
     try {
-      const apiUrl = `https://api.delirius.store/reactions/kick`
+      const apiUrl = `https://api.delirius.store/reactions/blush`
       const { data: res } = await axios.get(apiUrl)
 
       if (!res.status || !res.data) throw new Error()
 
+      // 4. Obtener JIDs reales (Traducción de LID)
       const selfJid = await getRealJid(sock, msg.key.participant || msg.key.remoteJid, msg)
       const selfTag = selfJid.split('@')[0]
 
@@ -27,22 +31,23 @@ export default {
       let mentions = [selfJid]
 
       if (targetJid) {
-        // Escenario con víctima: Pelea directa
+        // ESCENARIO A: Alguien más causó el sonrojo
         const victimJid = await getRealJid(sock, targetJid, msg)
         const victimTag = victimJid.split('@')[0]
-        txt = `*¡FIGHT!* @${selfTag} le metió tremendo golpe a @${victimTag}... ¡Eso tuvo que doler! 🥊💥`
+        txt = `*¡Ay, qué lindo!* @${selfTag} se sonrojó por culpa de @${victimTag}... ¡Hay amor en el grupo! 😊💖✨`
         mentions.push(victimJid)
       } else {
-        // Escenario sin etiqueta: El golpe random (Sin contexto)
+        // ESCENARIO B: Sonrojo sin contexto (Humor aleatorio)
         const frasesRandom = [
-          `*¿Y a este qué le dio?* @${selfTag} se dio un golpe a sí mismo sin contexto alguno... 🤡🥊`,
-          `*¡Alguien que lo detenga!* @${selfTag} anda tirando golpes al aire porque sí. 💨💥`,
-          `*Momento Random:* @${selfTag} se metió un golpe solito para ver si despertaba. 🤕✨`,
-          `@${selfTag} le dio un golpe a @${selfTag} solo porque tenía ganas de pelear con alguien. 🥊🥊`
+          `*¡Qué tierno!* @${selfTag} se puso rojo como un tomate sin ninguna razón aparente... 😊🍅`,
+          `@${selfTag} anda de tímido hoy. ¿Quién le habrá dicho algo lindo? ✨😳`,
+          `*Momento de timidez:* @${selfTag} se sonrojó solito... ¡Se nota que tiene un secreto! 🤫💕`,
+          `*¡Alerta de ternura!* @${selfTag} está sintiendo mucha penita ahora mismo. 😊🌸`
         ]
         txt = frasesRandom[Math.floor(Math.random() * frasesRandom.length)]
       }
 
+      // 5. Enviar el video/gif con el drama del sonrojo
       const enviado = await sock.sendMessage(from, {
         video: { url: res.data.url },
         caption: txt,
@@ -51,7 +56,8 @@ export default {
       }, { quoted: msg })
 
       if (enviado) {
-        await sock.sendMessage(from, { react: { text: targetJid ? '💥' : '❓', key: enviado.key } })
+        // Reacción final: Destellos si es general, o corazón si es hacia alguien
+        await sock.sendMessage(from, { react: { text: targetJid ? '💌' : '✨', key: enviado.key } })
       }
 
     } catch (err) {

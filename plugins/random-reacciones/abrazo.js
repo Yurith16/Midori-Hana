@@ -3,23 +3,27 @@ import '../../config.js'
 import { getRealJid } from '../../utils/jid.js'
 
 export default {
-  command: ['golpear', 'golpe', 'patada'],
+  command: ['abrazar', 'cuddle', 'abrazo'],
   reaction: true,
   execute: async (sock, msg, { from }) => {
+    // 1. Extraemos el comando para el texto
     const textMsg = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
-    const usedCommand = textMsg.split(' ')[0].slice(1) || 'golpe'
+    const usedCommand = textMsg.split(' ')[0].slice(1) || 'acurrucar'
 
+    // 2. Detectar objetivo (mencionado o citado)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo
     const targetJid = contextInfo?.participant || contextInfo?.mentionedJid?.[0]
 
-    await sock.sendMessage(from, { react: { text: '🥊', key: msg.key } })
+    // 3. Reacción inicial de amor
+    await sock.sendMessage(from, { react: { text: '🫂', key: msg.key } })
 
     try {
-      const apiUrl = `https://api.delirius.store/reactions/kick`
+      const apiUrl = `https://api.delirius.store/reactions/cuddle`
       const { data: res } = await axios.get(apiUrl)
 
       if (!res.status || !res.data) throw new Error()
 
+      // 4. Obtener JIDs reales
       const selfJid = await getRealJid(sock, msg.key.participant || msg.key.remoteJid, msg)
       const selfTag = selfJid.split('@')[0]
 
@@ -27,22 +31,23 @@ export default {
       let mentions = [selfJid]
 
       if (targetJid) {
-        // Escenario con víctima: Pelea directa
+        // ESCENARIO A: Acurrucándose con alguien (Puro drama romántico)
         const victimJid = await getRealJid(sock, targetJid, msg)
         const victimTag = victimJid.split('@')[0]
-        txt = `*¡FIGHT!* @${selfTag} le metió tremendo golpe a @${victimTag}... ¡Eso tuvo que doler! 🥊💥`
+        txt = `*¡Qué romántico!* @${selfTag} se acurrucó tiernamente con @${victimTag}... El tiempo se detuvo para ellos. ✨🧸💖`
         mentions.push(victimJid)
       } else {
-        // Escenario sin etiqueta: El golpe random (Sin contexto)
+        // ESCENARIO B: Buscando afecto sin contexto (Humor solitario)
         const frasesRandom = [
-          `*¿Y a este qué le dio?* @${selfTag} se dio un golpe a sí mismo sin contexto alguno... 🤡🥊`,
-          `*¡Alguien que lo detenga!* @${selfTag} anda tirando golpes al aire porque sí. 💨💥`,
-          `*Momento Random:* @${selfTag} se metió un golpe solito para ver si despertaba. 🤕✨`,
-          `@${selfTag} le dio un golpe a @${selfTag} solo porque tenía ganas de pelear con alguien. 🥊🥊`
+          `*¡Alerta de soledad!* @${selfTag} se está acurrucando con su almohada porque nadie le hace caso... 🧸💔`,
+          `@${selfTag} anda buscando un abracito desesperadamente. ¿Alguien se ofrece? 🫂✨`,
+          `*Sin contexto:* @${selfTag} se acurrucó con el aire. El drama de la soltería es real. ✨🤡`,
+          `@${selfTag} entró en modo cariñoso, pero no encontró a nadie... ¡Qué triste! 🥺🍃`
         ]
         txt = frasesRandom[Math.floor(Math.random() * frasesRandom.length)]
       }
 
+      // 5. Enviar el video/gif con la ternura
       const enviado = await sock.sendMessage(from, {
         video: { url: res.data.url },
         caption: txt,
@@ -51,7 +56,8 @@ export default {
       }, { quoted: msg })
 
       if (enviado) {
-        await sock.sendMessage(from, { react: { text: targetJid ? '💥' : '❓', key: enviado.key } })
+        // Reacción final: Oso de peluche o brillos
+        await sock.sendMessage(from, { react: { text: targetJid ? '💖' : '🧸', key: enviado.key } })
       }
 
     } catch (err) {

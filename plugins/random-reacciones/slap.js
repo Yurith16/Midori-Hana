@@ -6,24 +6,15 @@ export default {
   command: ['cachetada', 'slap', 'bofetada'],
   reaction: true,
   execute: async (sock, msg, { from }) => {
-    // 1. Extraemos prefijo y comando manualmente para evitar 'undefined'
+    // 1. Extraemos el comando para el texto
     const textMsg = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
-    const usedPrefix = textMsg.charAt(0) || '.'
     const usedCommand = textMsg.split(' ')[0].slice(1) || 'cachetada'
 
     // 2. Detectar objetivo (mencionado o citado)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo
     const targetJid = contextInfo?.participant || contextInfo?.mentionedJid?.[0]
 
-    // 3. Mensaje de ayuda (Cambiando el tono para no aburrir)
-    if (!targetJid) {
-      const helpText = `> *Etiqueta a quien necesite que lo ubiquen de un golpe...* ✋💥\n\n` +
-                       `*Uso:* ${usedPrefix}${usedCommand} @user`
-      
-      return sock.sendMessage(from, { text: helpText }, { quoted: msg })
-    }
-
-    // 4. Reacción inicial de "prepárate"
+    // 3. Reacción inicial de "prepárate"
     await sock.sendMessage(from, { react: { text: '😤', key: msg.key } })
 
     try {
@@ -32,22 +23,41 @@ export default {
 
       if (!res.status || !res.data) throw new Error()
 
-      // 5. Obtener JIDs reales
+      // 4. Obtener JIDs reales (Traducción de LID)
       const selfJid = await getRealJid(sock, msg.key.participant || msg.key.remoteJid, msg)
-      const victimJid = await getRealJid(sock, targetJid, msg)
+      const selfTag = selfJid.split('@')[0]
 
-      // 6. Mensaje con el drama: La humillación pública en el grupo
-      const txt = `*¡Reacciona!* @${selfJid.split('@')[0]} le dio una cachetada épica a @${victimJid.split('@')[0]} para que se ubique. ✋💥`
+      let txt = ''
+      let mentions = [selfJid]
 
+      if (targetJid) {
+        // ESCENARIO A: Ubicando a alguien más (Drama dirigido)
+        const victimJid = await getRealJid(sock, targetJid, msg)
+        const victimTag = victimJid.split('@')[0]
+        txt = `*¡REACCIONA!* @${selfTag} le dio una bofetada épica a @${victimTag} para que se ubique... ¡Eso sonó fuerte! ✋💥🔥`
+        mentions.push(victimJid)
+      } else {
+        // ESCENARIO B: Cachetada sin contexto (Humor aleatorio)
+        const frasesRandom = [
+          `*¡POV:* Te das una cachetada sin contexto! @${selfTag} perdió el sentido y se pegó solito. 🤦‍♂️💥`,
+          `*¿Todo bien?* @${selfTag} se dio una bofetada a sí mismo solo porque tenía ganas de sentir el drama. ✋🤡`,
+          `@${selfTag} se dio un golpe en la cara porque no puede creer lo que acaba de leer... ¡Ubícate! 😤✨`,
+          `*Momento épico:* @${selfTag} se dio una cachetada sin razón alguna. ¡Reacciona, hombre! 💥🤕`
+        ]
+        txt = frasesRandom[Math.floor(Math.random() * frasesRandom.length)]
+      }
+
+      // 5. Enviar el video/gif con el drama de la bofetada
       const enviado = await sock.sendMessage(from, {
         video: { url: res.data.url },
         caption: txt,
         gifPlayback: true,
-        mentions: [selfJid, victimJid]
+        mentions: mentions
       }, { quoted: msg })
 
       if (enviado) {
-        await sock.sendMessage(from, { react: { text: '💥', key: enviado.key } })
+        // Reacción final: Rayo si es a otro, o duda si es solo
+        await sock.sendMessage(from, { react: { text: targetJid ? '⚡' : '🤔', key: enviado.key } })
       }
 
     } catch (err) {

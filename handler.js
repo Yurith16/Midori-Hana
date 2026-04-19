@@ -1,14 +1,18 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import pino from 'pino'
 import { jidNormalizedUser, getContentType, proto, downloadContentFromMessage, generateWAMessageFromContent, prepareWAMessageMedia, generateWAMessage, delay, jidDecode, generateForwardMessageContent } from '@whiskeysockets/baileys'
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logPlugin, logMessage, logEvent } from './utils/logger.js'
 import { watchPlugins } from './utils/pluginWatcher.js'
-import { getGroupConfig, loadDatabase, trackActivity, updateGroupName } from './database/db.js'
+import { getGroupConfig, loadDatabase, trackActivity, updateGroupName, isUserMuted } from './database/db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// Configuración de Logger silencioso para evitar spam en consola
+const logger = pino({ level: 'silent' })
 
 let config = null
 let commands = new Map()
@@ -86,7 +90,8 @@ async function isOwner(sock, sender, msg, fromMe) {
 async function isGroupAdmin(sock, groupId, userId) {
   try {
     const meta = await sock.groupMetadata(groupId)
-    const userNum = cleanNumber(userId)
+    const realJid = await getRealJid(sock, userId, { key: { remoteJid: groupId } })
+    const userNum = cleanNumber(realJid)
     return meta.participants.some(p => cleanNumber(p.id) === userNum && (p.admin === 'admin' || p.admin === 'superadmin'))
   } catch { return false }
 }
@@ -191,6 +196,11 @@ async function resolveDisplaySender(sock, sender, msg) {
 export async function handleMessage(sock, msg, store) {
   if (!config) return
 
+  // Inyectar logger silencioso en la instancia para callar libsignal
+  if (sock.ev) {
+    sock.logger = logger
+  }
+
   if (!sock.generateWAMessageFromContent) {
     sock.generateWAMessageFromContent = generateWAMessageFromContent
   }
@@ -201,12 +211,17 @@ export async function handleMessage(sock, msg, store) {
 
     const isGroup = from.endsWith('@g.us')
     const sender = msg.key.participant || from
+
+    // Obtención del número real (traducción de @lid)
+    const realSenderJid = await getRealJid(sock, sender, msg)
+    const senderNumber = cleanNumber(realSenderJid)
+
     const isUserOwner = await isOwner(sock, sender, msg, msg.key.fromMe)
     const userName = msg.pushName
 
     // Registrar actividad en grupos
     if (isGroup && !msg.key.fromMe) {
-      trackActivity(from, sender)
+      trackActivity(from, senderNumber)
     }
 
     // Guardar nombre del grupo en DB
@@ -244,6 +259,30 @@ export async function handleMessage(sock, msg, store) {
                  msg.message?.videoMessage?.caption ||
                  msg.message?.documentMessage?.caption || ''
 
+    // [BLOQUE DE MUTE REFORZADO]
+    if (isGroup && !isUserOwner) {
+      const isMuted = isUserMuted(from, senderNumber)
+      if (isMuted) {
+        const isAdmin = await isGroupAdmin(sock, from, sender)
+        if (!isAdmin) {
+          console.log(`[MUTE] Borrando mensaje de: ${senderNumber}`)
+          try {
+            await sock.sendMessage(from, { 
+              delete: { 
+                remoteJid: from, 
+                fromMe: false, 
+                id: msg.key.id, 
+                participant: sender 
+              } 
+            })
+            return 
+          } catch (err) {
+            logError(err, 'Error al borrar mensaje muteado')
+          }
+        }
+      }
+    }
+
     const { matched, prefix, text: cmdText } = getCommandText(text)
 
     if (!text || !matched) {
@@ -260,7 +299,7 @@ export async function handleMessage(sock, msg, store) {
     const cmd = commands.get(cmdName)
     if (!cmd) return
 
-    // Modo admin — solo bloquea comandos, no mensajes normales
+    // Modo admin
     if (isGroup && groupCfg?.adminMode && !isUserOwner) {
       const isAdmin = await isGroupAdmin(sock, from, sender)
       if (!isAdmin) {

@@ -3,23 +3,27 @@ import '../../config.js'
 import { getRealJid } from '../../utils/jid.js'
 
 export default {
-  command: ['golpear', 'golpe', 'patada'],
+  command: ['bully', 'molestar', 'humillar'],
   reaction: true,
   execute: async (sock, msg, { from }) => {
+    // 1. Extraemos el comando para el texto
     const textMsg = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
-    const usedCommand = textMsg.split(' ')[0].slice(1) || 'golpe'
+    const usedCommand = textMsg.split(' ')[0].slice(1) || 'bully'
 
+    // 2. Detectar objetivo (mencionado o citado)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo
     const targetJid = contextInfo?.participant || contextInfo?.mentionedJid?.[0]
 
-    await sock.sendMessage(from, { react: { text: '🥊', key: msg.key } })
+    // 3. Reacción inicial de "malicia"
+    await sock.sendMessage(from, { react: { text: '😈', key: msg.key } })
 
     try {
-      const apiUrl = `https://api.delirius.store/reactions/kick`
+      const apiUrl = `https://api.delirius.store/reactions/bully`
       const { data: res } = await axios.get(apiUrl)
 
       if (!res.status || !res.data) throw new Error()
 
+      // 4. Obtener JIDs reales (Traducción de LID)
       const selfJid = await getRealJid(sock, msg.key.participant || msg.key.remoteJid, msg)
       const selfTag = selfJid.split('@')[0]
 
@@ -27,22 +31,23 @@ export default {
       let mentions = [selfJid]
 
       if (targetJid) {
-        // Escenario con víctima: Pelea directa
+        // ESCENARIO A: Bullying dirigido
         const victimJid = await getRealJid(sock, targetJid, msg)
         const victimTag = victimJid.split('@')[0]
-        txt = `*¡FIGHT!* @${selfTag} le metió tremendo golpe a @${victimTag}... ¡Eso tuvo que doler! 🥊💥`
+        txt = `*¡F por @${victimTag}!* @${selfTag} lo está agarrando de bajada... ¡No le tengan piedad! 😈🔥👊`
         mentions.push(victimJid)
       } else {
-        // Escenario sin etiqueta: El golpe random (Sin contexto)
+        // ESCENARIO B: Auto-Bullying (Sin contexto)
         const frasesRandom = [
-          `*¿Y a este qué le dio?* @${selfTag} se dio un golpe a sí mismo sin contexto alguno... 🤡🥊`,
-          `*¡Alguien que lo detenga!* @${selfTag} anda tirando golpes al aire porque sí. 💨💥`,
-          `*Momento Random:* @${selfTag} se metió un golpe solito para ver si despertaba. 🤕✨`,
-          `@${selfTag} le dio un golpe a @${selfTag} solo porque tenía ganas de pelear con alguien. 🥊🥊`
+          `*¿Auto-Bullying?* @${selfTag} se está molestando a sí mismo porque no tiene a quién más molestar. 🤡📉`,
+          `@${selfTag} se está humillando solo sin contexto alguno... ¡Qué triste situación! 🙊💔`,
+          `*Momento de crisis:* @${selfTag} empezó a hacerse bully solito. ¿Ocupas un abrazo? 🫂📉`,
+          `*Nivel de soledad:* @${selfTag} se está molestando a sí mismo para no sentirse ignorado. 😈🤣`
         ]
         txt = frasesRandom[Math.floor(Math.random() * frasesRandom.length)]
       }
 
+      // 5. Enviar el video/gif con el drama
       const enviado = await sock.sendMessage(from, {
         video: { url: res.data.url },
         caption: txt,
@@ -51,7 +56,8 @@ export default {
       }, { quoted: msg })
 
       if (enviado) {
-        await sock.sendMessage(from, { react: { text: targetJid ? '💥' : '❓', key: enviado.key } })
+        // Reacción final: Risa si es a otro, o payaso si es solo
+        await sock.sendMessage(from, { react: { text: targetJid ? '🤣' : '🤡', key: enviado.key } })
       }
 
     } catch (err) {
