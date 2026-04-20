@@ -57,7 +57,7 @@ export default {
         if (unit === 'GB') sizeMB = num * 1024
       }
 
-      if (sizeMB > 400) {
+      if (sizeMB > 800) {
         await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })
         return
       }

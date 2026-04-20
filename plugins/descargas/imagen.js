@@ -1,41 +1,42 @@
 import axios from 'axios'
 
 export default {
-  command: ['imagen', 'img', 'googleimg'],
-  execute: async (sock, msg, { from, args, text }) => {
+  command: ['img', 'imagen', 'googleimg'],
+  execute: async (sock, msg, { from, args }) => {
+    // Validación estética inicial
+    if (!args[0]) {
+      await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
+      await sock.sendMessage(from, { text: '> ¿Qué imagen desea buscar?' }, { quoted: msg })
+      return
+    }
+
+    const query = args.join(' ')
+    await sock.sendMessage(from, { react: { text: '🍃', key: msg.key } })
+
     try {
-      const consulta = text || args.join(' ')
+      const { data: res } = await axios.post('https://panel.apinexus.fun/api/imagen/buscar', 
+        { query: query }, 
+        { headers: { 'x-api-key': 'antbx21e5jhac' } }
+      )
 
-      if (!consulta || consulta.trim() === '') {
-        return sock.sendMessage(from, { 
-          text: '> 🖼️ *Hernández*, por favor escribe qué imagen deseas buscar.\n\n*Ejemplo:* .imagen arboles' 
-        }, { quoted: msg })
-      }
+      if (!res.success || !res.data || !res.data.imagenes || res.data.imagenes.length === 0) throw new Error()
 
-      await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } })
+      // Elegimos una imagen al azar de la lista
+      const imgs = res.data.imagenes
+      const randomImg = imgs[Math.floor(Math.random() * imgs.length)]
 
-      // Usamos una API dedicada para evitar los bloqueos de Google
-      const response = await axios.get(`https://afl-api.vercel.app/api/search/googleimage?query=${encodeURIComponent(consulta)}`)
-      const data = response.data
-      
-      // Extraemos la lista de imágenes (esta API devuelve un array de URLs)
-      const results = data.result
-      const image = results[Math.floor(Math.random() * results.length)]
-
-      if (!image) {
-        return sock.sendMessage(from, { text: '> ❌ No logré encontrar imágenes para esa búsqueda, *Hernández*.' }, { quoted: msg })
-      }
-
-      await sock.sendMessage(from, { 
-        image: { url: image }, 
-        caption: `> 🖼️ *Resultado:* ${consulta}\n> 🌐 *Fuente:* Google Images` 
+      // Enviamos la imagen sin caption
+      const sentMsg = await sock.sendMessage(from, { 
+        image: { url: randomImg }
       }, { quoted: msg })
 
-      await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
+      // Reaccionamos directamente al mensaje de la imagen enviada
+      await sock.sendMessage(from, { 
+        react: { text: '🍃', key: sentMsg.key } 
+      })
 
     } catch (err) {
-      console.error(err)
-      await sock.sendMessage(from, { text: `> ❌ El servidor de búsqueda está saturado. Intenta de nuevo en un momento.` }, { quoted: msg })
+      await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
     }
   }
 }

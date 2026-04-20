@@ -242,19 +242,34 @@ async function _processMessage(sock, msg, store, from) {
 
     const { matched, prefix, text: cmdText } = getCommandText(text)
 
+    // Si el mensaje NO tiene prefijo (matched es false) entra aquí
     if (!text || !matched) {
       if (text) {
-        const groupName    = isGroup ? await getGroupName(sock, from) : null
+        // --- DETECTOR DE RESPUESTAS (TRIVIA) ---
+        // Buscamos en todos los comandos cargados alguno que tenga la función 'onMessage'
+        const triviaPlugin = Array.from(commands.values()).find(p => p.onMessage)
+        if (triviaPlugin) {
+          await triviaPlugin.onMessage(sock, msg, { from, text })
+        }
+        // ---------------------------------------
+
+        const groupName = isGroup ? await getGroupName(sock, from) : null
         const displaySender = await resolveDisplaySender(sock, sender, msg)
         logMessage({ sender: displaySender, message: text, isGroup, groupName, userName })
       }
-      return
+      return 
     }
 
-    const args    = cmdText.trim().split(/\s+/)
+    const args = cmdText.trim().split(/\s+/)
     const cmdName = args.shift().toLowerCase()
-    const cmd     = commands.get(cmdName)
-    if (!cmd) return
+    const cmd = commands.get(cmdName)
+
+    // Si el comando no existe (ejemplo: .hola), también revisamos si es respuesta antes de salir
+    if (!cmd) {
+       const triviaPlugin = Array.from(commands.values()).find(p => p.onMessage)
+       if (triviaPlugin) await triviaPlugin.onMessage(sock, msg, { from, text })
+       return
+    }
 
     // Modo admin — solo bloquea comandos
     if (isGroup && groupCfg?.adminMode && !isUserOwner) {
