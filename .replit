@@ -1,10 +1,10 @@
-modules = ["nodejs-20", "bash"]
+modules = ["bash", "nodejs-20", "python-3.11"]
 [agent]
 expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["file"]
+packages = ["file", "vercel-pkg"]
 
 [workflows]
 runButton = "Project"

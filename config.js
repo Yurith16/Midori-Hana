@@ -6,7 +6,7 @@ export default {
   useQR: true,
   prefix: '*',
   sessionName: 'Midori-session',
-  autoRead: true,
+  autoRead: false,
   autoBio: true,
   antiCall: true,
   allowPrivate: false,
