@@ -28,21 +28,21 @@ export default {
     }
 
     await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
-    
+
     let tempFile = null
     let convertedFile = null
-    
+
     try {
       let videoUrl = args[0]
       let videoTitle = ''
       let duration = '0:00'
       let ytThumb = '' // Variable para guardar la miniatura real de YT
-      
+
       // Si no es URL, buscamos en YouTube
       if (!videoUrl.match(/youtu/gi)) {
         const search = await yts(args.join(' '))
         const video = search.videos.find(v => v.type === 'video') || search.videos[0]
-        
+
         if (!video) throw new Error('No encontrado')
         videoUrl = video.url
         videoTitle = video.title
@@ -55,7 +55,7 @@ export default {
         videoTitle = search.title
         duration = search.timestamp
       }
-      
+
       const result = await getAudio(videoUrl)
       if (!result || !result.url) throw new Error('API sin respuesta')
 
@@ -64,18 +64,18 @@ export default {
       const thumb = ytThumb || result.thumb || config.defaultImg
       const audioUrl = result.url
       const needsConversion = result.needsConversion || false
-      
+
       let finalBuffer
-      
+
       if (needsConversion) {
         tempFile = path.join(TEMP_DIR, `${Date.now()}.tmp`)
         const response = await fetch(audioUrl)
         const buffer = Buffer.from(await response.arrayBuffer())
         fs.writeFileSync(tempFile, buffer)
-        
+
         convertedFile = path.join(TEMP_DIR, `${Date.now()}.mp3`)
         await execPromise(`"${ffmpegPath}" -i "${tempFile}" -acodec libmp3lame -ab 128k -ar 44100 -preset ultrafast "${convertedFile}" 2>/dev/null`)
-        
+
         finalBuffer = fs.readFileSync(convertedFile)
       } else {
         const response = await fetch(audioUrl)
@@ -103,7 +103,7 @@ export default {
 
       await sock.sendMessage(from, { react: { text: '🍃', key: sentMsg.key } })
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
-      
+
     } catch (err) {
       console.error('Error en Play:', err.message)
       await sock.sendMessage(from, { react: { text: '❌', key: msg.key } })

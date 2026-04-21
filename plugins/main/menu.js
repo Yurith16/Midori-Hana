@@ -27,14 +27,28 @@ function getNextEmoji(type) {
   return emoji
 }
 
-function toElegantFont(text) {
-  const mapping = {
-    'A':'𝙰','B':'𝙱','C':'𝙲','D':'𝙳','E':'𝙴','F':'𝙵','G':'𝙶','H':'𝙷',
-    'I':'𝙸','J':'𝙹','K':'𝙺','L':'𝙻','M':'𝙼','N':'𝙽','O':'𝙾','P':'𝙿',
-    'Q':'𝚀','R':'𝚁','S':'𝚂','T':'𝚃','U':'𝚄','V':'𝚅','W':'𝚆','X':'𝚇',
-    'Y':'𝚈','Z':'𝚉','1':'𝟷','8':'𝟾',' ':' '
+function toMono(text) {
+  const map = {
+    A:'𝙰',B:'𝙱',C:'𝙲',D:'𝙳',E:'𝙴',F:'𝙵',G:'𝙶',H:'𝙷',I:'𝙸',J:'𝙹',
+    K:'𝙺',L:'𝙻',M:'𝙼',N:'𝙽',O:'𝙾',P:'𝙿',Q:'𝚀',R:'𝚁',S:'𝚂',T:'𝚃',
+    U:'𝚄',V:'𝚅',W:'𝚆',X:'𝚇',Y:'𝚈',Z:'𝚉',
+    a:'𝚊',b:'𝚋',c:'𝚌',d:'𝚍',e:'𝚎',f:'𝚏',g:'𝚐',h:'𝚑',i:'𝚒',j:'𝚓',
+    k:'𝚔',l:'𝚕',m:'𝚖',n:'𝚗',o:'𝚘',p:'𝚙',q:'𝚚',r:'𝚛',s:'𝚜',t:'𝚝',
+    u:'𝚞',v:'𝚟',w:'𝚠',x:'𝚡',y:'𝚢',z:'𝚣',' ':' '
   }
-  return text.split('').map(c => mapping[c] || c).join('')
+  return text.split('').map(c => map[c] || c).join('')
+}
+
+function toBold(text) {
+  const map = {
+    A:'𝗔',B:'𝗕',C:'𝗖',D:'𝗗',E:'𝗘',F:'𝗙',G:'𝗚',H:'𝗛',I:'𝗜',J:'𝗝',
+    K:'𝗞',L:'𝗟',M:'𝗠',N:'𝗡',O:'𝗢',P:'𝗣',Q:'𝗤',R:'𝗥',S:'𝗦',T:'𝗧',
+    U:'𝗨',V:'𝗩',W:'𝗪',X:'𝗫',Y:'𝗬',Z:'𝗭',
+    a:'𝗮',b:'𝗯',c:'𝗰',d:'𝗱',e:'𝗲',f:'𝗳',g:'𝗴',h:'𝗵',i:'𝗶',j:'𝗷',
+    k:'𝗸',l:'𝗹',m:'𝗺',n:'𝗻',o:'𝗼',p:'𝗽',q:'𝗾',r:'𝗿',s:'𝘀',t:'𝘁',
+    u:'𝘂',v:'𝘃',w:'𝘄',x:'𝘅',y:'𝘆',z:'𝘇',' ':' '
+  }
+  return text.split('').map(c => map[c] || c).join('')
 }
 
 function clockString(ms) {
@@ -54,21 +68,17 @@ function getHondurasInfo() {
   return { hora, saludo, fecha }
 }
 
-// Medir longitud real de un string con caracteres especiales/emojis
-function visLen(str) {
-  return [...str].length
-}
+const div = `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`
 
-// Construir caja con cierre dinámico que iguala el ancho del header
-function buildBox(title, lines, bullet) {
-  const header = `╭━━〔 ${title} 〕━━╮`
-  const w = visLen(header) - 2
-  const footer = `╰${'━'.repeat(w)}╯`
-  let txt = `${header}\n┃\n`
-  for (const line of lines) {
-    txt += `┃ ${bullet} ${line}\n`
+// Cada categoría = su propia cajita idéntica al diseño de redes
+function buildCatBox(catName, cmds, bullet, prefix) {
+  let txt = `╭─〔 ${toBold(catName)} 〕\n`
+  txt += `│\n`
+  for (const cmd of cmds) {
+    txt += `│ ${bullet} ${cmd}\n`
   }
-  txt += `┃\n${footer}\n`
+  txt += `│\n`
+  txt += `╰─────────────────\n`
   return txt
 }
 
@@ -76,7 +86,7 @@ export default {
   command: ['menu', 'help', 'ayuda'],
   execute: async (sock, msg, { from, config: cfg }) => {
     try {
-      const prefix = cfg?.prefix || global.config?.prefix || '.'
+      const prefix    = cfg?.prefix || global.config?.prefix || '.'
       const bullet    = getNextEmoji('BULLET')
       const reaccion  = getNextEmoji('REACCIÓN')
       const botTitle  = getNextEmoji('BOT_TITLE')
@@ -84,8 +94,8 @@ export default {
 
       await sock.sendMessage(from, { react: { text: reaccion, key: msg.key } })
 
-      // Escanear plugins
       const cats = {}
+
       function scan(dir) {
         const files = fs.readdirSync(dir)
         for (const file of files) {
@@ -106,82 +116,58 @@ export default {
           }
         }
       }
+
       scan(pluginsDir)
 
-      await new Promise(r => setTimeout(r, 400))
-
       const categoryMap = {
-        'main':              '𝙿𝚁𝙸𝙽𝙲𝙸𝙿𝙰𝙻',
-        'owner':             '𝙾𝚆𝙽𝙴𝚁',
-        'administracion':    '𝙶𝚁𝚄𝙿𝙾𝚂',
-        'descargas':         '𝙳𝙴𝚂𝙲𝙰𝚁𝙶𝙰𝚂',
-        'busqueda':          '𝙱𝚄𝚂𝚀𝚄𝙴𝙳𝙰𝚂',
-        'juegos':            '𝙹𝚄𝙴𝙶𝙾𝚂',
-        'I-A-S':             '𝙸𝙰',
-        'anime':             '𝙰𝙽𝙸𝙼𝙴',
-        'random-reacciones': '𝚁𝙴𝙰𝙲𝙲𝙸𝙾𝙽𝙴𝚂',
-        '+18':               '𝙲𝙾𝙽𝚃𝙴𝙽𝙸𝙳𝙾 +𝟷𝟾',
-        'herramientas':      '𝙷𝙴𝚁𝚁𝙰𝙼𝙸𝙴𝙽𝚃𝙰𝚂',
-        'economia':          '𝙴𝙲𝙾𝙽𝙾𝙼𝙸𝙰'
+        main: 'Principal', 'I-A-S': 'Inteligencia Artificial', anime: 'Anime',
+        'random-reacciones': 'Reacciones', descargas: 'Descargas', busqueda: 'Busquedas',
+        herramientas: 'Herramientas', economia: 'Economia', juegos: 'Juegos',
+        social: 'Social', administracion: 'Grupos', '+18': 'Contenido +18', owner: 'Owner'
       }
 
       const { hora, saludo, fecha } = getHondurasInfo()
-      const username = msg.pushName || 'amor'
-      const uptime   = clockString(process.uptime() * 1000)
-      const botName  = cfg?.botName || global.config?.botName || 'Midori-Hana'
-
-      // Contar total de comandos
+      const username  = msg.pushName || 'amor'
+      const uptime    = clockString(process.uptime() * 1000)
+      const botName   = cfg?.botName || global.config?.botName || 'Midori-Hana'
       const totalCmds = Object.values(cats).reduce((acc, arr) => acc + new Set(arr).size, 0)
 
-      // ── Caja principal ──────────────────────────────────────
-      const mainTitle = `${botTitle} ${toElegantFont(botName.replace(/©\s*/g, '').toUpperCase())} ${botTitle}`
-      let menuTxt = buildBox(mainTitle, [
-        `🫧 _${saludo}, ${username}_ 🫧`,
-        `${bullet} ${fecha}`,
-        `${bullet} ${hora} (HN)`
-      ].map(l => l), '')
-        .replace(/┃ \n/g, '┃\n')
+      // ── Encabezado principal ──
+      let menuTxt = `╭─〔 ${botTitle} *${toMono(botName.replace(/©\s*/g, '').toUpperCase())}* ${botTitle} 〕\n`
+      menuTxt += `│\n`
+      menuTxt += `│ 🫧 _${saludo}, ${username}_ 🫧\n`
+      menuTxt += `│ ${bullet} ${fecha}\n`
+      menuTxt += `│ ${bullet} ${hora} (HN)\n`
+      menuTxt += `│\n`
+      menuTxt += `╰─────────────────\n\n`
 
-      menuTxt += '\n'
+      // ── Caja de info ──
+      menuTxt += `╭─〔 ${infoTitle} ${toBold('Info del Bot')} ${infoTitle} 〕\n`
+      menuTxt += `│\n`
+      menuTxt += `│ ${bullet} Creador: ${cfg?.ownerName || global.config?.ownerName || 'HERNANDEZ'}\n`
+      menuTxt += `│ ${bullet} Activo: ${uptime}\n`
+      menuTxt += `│ ${bullet} Prefix: ${Array.isArray(prefix) ? prefix.join('  ') : prefix}\n`
+      menuTxt += `│ ${bullet} Comandos: ${totalCmds}\n`
+      menuTxt += `│\n`
+      menuTxt += `╰─────────────────\n\n`
 
-      // ── Caja INFO ──────────────────────────────────────────
-      menuTxt += buildBox(`${infoTitle} ${toElegantFont('INFO')} ${infoTitle}`, [
-        `Creador: ${cfg?.ownerName || global.config?.ownerName || 'HERNANDEZ'}`,
-        `Activo: ${uptime}`,
-        `Prefix: ${Array.isArray(prefix) ? prefix.join('  ') : prefix}`,
-        `Comandos: ${totalCmds}`
-      ], bullet)
-
-      menuTxt += '\n'
-
-      // ── Categorías ─────────────────────────────────────────
-      const orden = ['main','I-A-S','anime','random-reacciones','descargas','busqueda','herramientas','economia','juegos','administracion','+18','owner']
-
+      // ── Una cajita por categoría ──
+      const orden = ['main','I-A-S','anime','random-reacciones','descargas','busqueda','herramientas','economia','juegos','social','administracion','+18','owner']
       for (const cat of orden) {
         const cmds = cats[cat]
         if (cmds?.length) {
-          const catName = categoryMap[cat] || cat.toUpperCase()
+          const catName = categoryMap[cat] || cat
           const cmdList = [...new Set(cmds)].sort().map(c => `${prefix}${c}`)
-          menuTxt += buildBox(catName, cmdList, bullet)
+          menuTxt += buildCatBox(catName, cmdList, bullet, prefix)
           menuTxt += '\n'
         }
       }
 
-      // ── Footer ─────────────────────────────────────────────
-      menuTxt += `${bullet} ${toElegantFont(`${botName.replace(/©\s*/g, '').toUpperCase()} SISTEMA`)} ${bullet}\n`
-      menuTxt += `🩷 Soporte: ${cfg?.soporte || global.config?.soporte}\n`
-      menuTxt += `🌸 Grupo: ${cfg?.grupoOficial || global.config?.grupoOficial}`
+      // ── Pie ──
+      menuTxt += `> *${toMono(botName)} ™* 🌸`
 
       const randomImg = MENU_IMAGES[Math.floor(Math.random() * MENU_IMAGES.length)]
-
-      try {
-        await sock.sendMessage(from, {
-          image: { url: randomImg },
-          caption: menuTxt
-        }, { quoted: msg })
-      } catch {
-        await sock.sendMessage(from, { text: menuTxt }, { quoted: msg })
-      }
+      await sock.sendMessage(from, { image: { url: randomImg }, caption: menuTxt }, { quoted: msg })
 
     } catch (err) {
       console.error(err)

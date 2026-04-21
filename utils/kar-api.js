@@ -1,9 +1,9 @@
 import axios from 'axios'
 import fg from 'fg-senna'
 
-// ─── API: Apinexus (primera opción) ───────────────────────
+// ─── API: Apinexus v2 (primera opción) ────────────────────
 
-export async function getAudioApinexus(url) {
+export async function getAudioApinexusV2(url) {
   const response = await fetch('https://panel.apinexus.fun/api/youtube/v2/mp3', {
     method: 'POST',
     headers: { 
@@ -22,7 +22,31 @@ export async function getAudioApinexus(url) {
       thumb: null
     }
   }
-  throw new Error('Apinexus falló')
+  throw new Error('Apinexus v2 falló')
+}
+
+// ─── API: Apinexus v1 (segunda opción) ────────────────────
+
+export async function getAudioApinexusV1(url) {
+  const response = await fetch('https://panel.apinexus.fun/api/youtube/mp3', {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json', 
+      'x-api-key': 'antbx21e5jhac' 
+    },
+    body: JSON.stringify({ url })
+  })
+
+  const res = await response.json()
+
+  if (res && res.success && res.data?.audio) {
+    return {
+      url: res.data.audio,
+      title: res.data.titulo,
+      thumb: null
+    }
+  }
+  throw new Error('Apinexus v1 falló')
 }
 
 // ─── SCRAPER: ytmp3.gs ────────────────────────────────────
@@ -256,7 +280,8 @@ export async function getAudioFgSenna(url) {
 // ─── Lista de APIs en orden de prioridad ──────────────────
 
 export const audioApis = [
-  { name: 'Apinexus',           get: getAudioApinexus      },
+  { name: 'Apinexus v2',        get: getAudioApinexusV2   },
+  { name: 'Apinexus v1',        get: getAudioApinexusV1   },
   { name: 'ytmp3.gs scraper',   get: getAudioYtmp3gs      },
   { name: 'PrinceTech yta',     get: getAudioPrinceYta    },
   { name: 'PrinceTech ytmp3',   get: getAudioPrinceYtmp3  },
