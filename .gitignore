@@ -73,12 +73,6 @@ dist/
 build/
 out/
 
-# Archivos de ejecutables
-yt-dlp
-ffmpeg
-ffprobe
-*.exe
-*.dll
 
 # Archivos de YouTube
 *.mp3
