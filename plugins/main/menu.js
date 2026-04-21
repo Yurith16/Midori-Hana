@@ -10,21 +10,14 @@ const MENU_IMAGES = [
   'https://www.image2url.com/r2/default/images/1776639876334-87e327fb-c225-42d5-bf68-a594f976fb49.jpg'
 ]
 
-const EMOJI_SEQUENCES = {
-  REACCIÓN:  ['🌿', '🍃', '🍀', '🌱', '🌼', '🌸', '🌺', '💮', '🥀', '🌻', '🌹', '🌷', '🏵️'],
-  BULLET:    ['🍃', '🌱', '🍀', '🌿', '🌼', '🌸', '🌺', '🌻', '🌹', '🌷', '☘️', '🥀', '💐'],
-  BOT_TITLE: ['🔥', '🌟', '✨', '⭐', '💫', '⚡', '💥', '🌪️', '🌊'],
-  INFO_TITLE:['ℹ️', '📊', '📈', '📉', '📋', '📌', '📍', '🔖', '🏷️', '📎', '📄', '🗂️']
-}
+const BULLETS = ['●', '▸', '◆', '›', '▹', '•']
 
-let sequenceCounters = { reacción: 0, bullet: 0, bot_title: 0, info_title: 0 }
+let bulletIndex = 0
 
-function getNextEmoji(type) {
-  const sequence = EMOJI_SEQUENCES[type]
-  const key = type.toLowerCase()
-  const emoji = sequence[sequenceCounters[key] % sequence.length]
-  sequenceCounters[key] = (sequenceCounters[key] + 1) % sequence.length
-  return emoji
+function getSessionBullet() {
+  const b = BULLETS[bulletIndex % BULLETS.length]
+  bulletIndex++
+  return b
 }
 
 function toMono(text) {
@@ -68,10 +61,7 @@ function getHondurasInfo() {
   return { hora, saludo, fecha }
 }
 
-const div = `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`
-
-// Cada categoría = su propia cajita idéntica al diseño de redes
-function buildCatBox(catName, cmds, bullet, prefix) {
+function buildCatBox(catName, cmds, bullet) {
   let txt = `╭─〔 ${toBold(catName)} 〕\n`
   txt += `│\n`
   for (const cmd of cmds) {
@@ -86,15 +76,13 @@ export default {
   command: ['menu', 'help', 'ayuda'],
   execute: async (sock, msg, { from, config: cfg }) => {
     try {
-      const prefix    = cfg?.prefix || global.config?.prefix || '.'
-      const bullet    = getNextEmoji('BULLET')
-      const reaccion  = getNextEmoji('REACCIÓN')
-      const botTitle  = getNextEmoji('BOT_TITLE')
-      const infoTitle = getNextEmoji('INFO_TITLE')
+      const prefix = cfg?.prefix || global.config?.prefix || '.'
+      const bullet = getSessionBullet()
 
-      await sock.sendMessage(from, { react: { text: reaccion, key: msg.key } })
+      await sock.sendMessage(from, { react: { text: '🌸', key: msg.key } })
 
       const cats = {}
+      const catCmds = {}
 
       function scan(dir) {
         const files = fs.readdirSync(dir)
@@ -108,9 +96,13 @@ export default {
               if (content.includes('command:')) {
                 const folderName = path.basename(path.dirname(full))
                 const cat = folderName === 'plugins' ? 'main' : folderName
-                if (!cats[cat]) cats[cat] = []
+
+                if (!cats[cat]) cats[cat] = 0
+                cats[cat]++
+
+                if (!catCmds[cat]) catCmds[cat] = []
                 const match = content.match(/command:\s*\[\s*['"]([^'"]+)['"]/)
-                if (match) cats[cat].push(match[1])
+                if (match) catCmds[cat].push(match[1])
               }
             } catch {}
           }
@@ -130,19 +122,19 @@ export default {
       const username  = msg.pushName || 'amor'
       const uptime    = clockString(process.uptime() * 1000)
       const botName   = cfg?.botName || global.config?.botName || 'Midori-Hana'
-      const totalCmds = Object.values(cats).reduce((acc, arr) => acc + new Set(arr).size, 0)
+      const totalCmds = Object.values(cats).reduce((acc, n) => acc + n, 0)
 
-      // ── Encabezado principal ──
-      let menuTxt = `╭─〔 ${botTitle} *${toMono(botName.replace(/©\s*/g, '').toUpperCase())}* ${botTitle} 〕\n`
+      // ── Encabezado ──
+      let menuTxt = `╭─〔 🌸 *${toMono(botName.replace(/©\s*/g, '').toUpperCase())}* 🌸 〕\n`
       menuTxt += `│\n`
-      menuTxt += `│ 🫧 _${saludo}, ${username}_ 🫧\n`
+      menuTxt += `│ _${saludo}, ${username}_\n`
       menuTxt += `│ ${bullet} ${fecha}\n`
       menuTxt += `│ ${bullet} ${hora} (HN)\n`
       menuTxt += `│\n`
       menuTxt += `╰─────────────────\n\n`
 
-      // ── Caja de info ──
-      menuTxt += `╭─〔 ${infoTitle} ${toBold('Info del Bot')} ${infoTitle} 〕\n`
+      // ── Info ──
+      menuTxt += `╭─〔 ${toBold('Info del Bot')} 〕\n`
       menuTxt += `│\n`
       menuTxt += `│ ${bullet} Creador: ${cfg?.ownerName || global.config?.ownerName || 'HERNANDEZ'}\n`
       menuTxt += `│ ${bullet} Activo: ${uptime}\n`
@@ -151,27 +143,26 @@ export default {
       menuTxt += `│\n`
       menuTxt += `╰─────────────────\n\n`
 
-      // ── Una cajita por categoría ──
+      // ── Categorías ──
       const orden = ['main','I-A-S','anime','random-reacciones','descargas','busqueda','herramientas','economia','juegos','social','administracion','+18','owner']
       for (const cat of orden) {
-        const cmds = cats[cat]
-        if (cmds?.length) {
+        if (cats[cat]) {
           const catName = categoryMap[cat] || cat
-          const cmdList = [...new Set(cmds)].sort().map(c => `${prefix}${c}`)
-          menuTxt += buildCatBox(catName, cmdList, bullet, prefix)
+          const cmdList = (catCmds[cat] || []).sort().map(c => `${prefix}${c}`)
+          menuTxt += buildCatBox(catName, cmdList, bullet)
           menuTxt += '\n'
         }
       }
 
       // ── Pie ──
-      menuTxt += `> *${toMono(botName)} ™* 🌸`
+      menuTxt += `> *${toMono(botName)}*`
 
       const randomImg = MENU_IMAGES[Math.floor(Math.random() * MENU_IMAGES.length)]
       await sock.sendMessage(from, { image: { url: randomImg }, caption: menuTxt }, { quoted: msg })
 
     } catch (err) {
       console.error(err)
-      await sock.sendMessage(from, { text: '🍃 Error al generar el menú.' }, { quoted: msg })
+      await sock.sendMessage(from, { text: '🌸 Error al generar el menú.' }, { quoted: msg })
     }
   }
 }
