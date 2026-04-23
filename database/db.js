@@ -119,6 +119,7 @@ export function getAllWarns(groupId) {
   return getGroupConfig(groupId).warns || {}
 }
 
+
 // ─── MUTE ─────────────────────────────────────────────────
 
 export function setMute(groupId, userId, status = true) {
@@ -136,6 +137,28 @@ export function isUserMuted(groupId, userId) {
   const cfg = getGroupConfig(groupId)
   const id  = cleanNumber(userId)
   return cfg.mutedUsers?.[id] === true
+}
+
+// ─── DB POR SUBBOT ────────────────────────────────────────
+
+const subbotDbs = new Map()
+
+export async function getSubbotDb(numero) {
+  if (subbotDbs.has(numero)) return subbotDbs.get(numero)
+
+  const dir  = path.join(__dirname, '..', 'db-subbot')
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+
+  const file    = path.join(dir, `${numero}.json`)
+  const adapter = new JSONFile(file)
+  const db      = new Low(adapter, { groups: {} })
+  await db.read()
+  if (!db.data)        db.data = { groups: {} }
+  if (!db.data.groups) db.data.groups = {}
+  await db.write()
+
+  subbotDbs.set(numero, db)
+  return db
 }
 
 export default db
