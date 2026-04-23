@@ -3,6 +3,7 @@ export default {
   ownerName: 'Hernandez',
   ownerNumbers: ['50496926150'],
   botNumber: '50432821762',
+  
   useQR: true,
   prefix: '*',
   sessionName: 'Midori-session',
@@ -10,8 +11,13 @@ export default {
   autoBio: true,
   antiCall: true,
   allowPrivate: false,
+
   defaultImg: 'https://image2url.com/r2/default/images/1774819432365-f144e9e5-3e19-4ac7-b51f-54b90a07a6aa.jpg',
   grupoOficial: 'https://chat.whatsapp.com/EO71LJBsMj8C4Xgb2moMAd',
+//subbot
+  subbot: true,
+  maxSubbots: 5,
+  
   // Configuración de Grupos Exclusivos
   nsfwGroupId: '120363427306410107@g.us', 
   nsfwMessage: '> 🍃 Este comando solo funciona en el grupo exclusivo para adultos.\n\n> 🔗 Únete aquí: https://chat.whatsapp.com/IYM42pfeB4Q3r902v0MBzy',
