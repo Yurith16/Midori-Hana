@@ -18,6 +18,7 @@ import handler from './handler.js'
 import { startAutoBio } from './utils/autobio.js'
 import { cleanupPuppeteerCache } from './utils/cleanup.js'
 import { getGroupConfig } from './database/db.js'
+import { reconnectSavedSessions } from './subbot.js'
 global.handler = handler
 import { 
   logConnection, 
@@ -39,9 +40,7 @@ const store = {
       for (const msg of messages) {
         if (!msg.key?.id) continue
         const jid = msg.key.remoteJid
-        if (!store.messages.has(jid)) {
-          store.messages.set(jid, new Map())
-        }
+        if (!store.messages.has(jid)) store.messages.set(jid, new Map())
         const chatMsgs = store.messages.get(jid)
         chatMsgs.set(msg.key.id, msg)
         if (chatMsgs.size > store.maxPerChat) {
@@ -75,75 +74,51 @@ function formatPhoneNumber(num) {
   return num
 }
 
-// Verificar si existe sesión
 const hasSession = fs.existsSync(`./${config.sessionName}/creds.json`)
 
 async function startBot() {
   logConnection('connecting', 'Iniciando sesión...')
 
   const { state, saveCreds } = await useMultiFileAuthState(config.sessionName)
-  const { version } = await fetchLatestBaileysVersion()
+  const { version }          = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({
     version,
-    logger: pino({ level: 'silent' }),
-    printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
-    auth: state,
-    syncFullHistory: false,
-    downloadHistory: false,
+    logger:              pino({ level: 'silent' }),
+    printQRInTerminal:   false,
+    browser:             Browsers.ubuntu('Chrome'),
+    auth:                state,
+    syncFullHistory:     false,
+    downloadHistory:     false,
     markOnlineOnConnect: true,
-    getMessage: async () => undefined
+    getMessage:          async () => undefined
   })
 
-  // Agregar funciones de Baileys al socket
   sock.generateWAMessageFromContent = generateWAMessageFromContent
-  sock.generateWAMessage = generateWAMessage
+  sock.generateWAMessage             = generateWAMessage
 
   store.bind(sock.ev)
 
-  // Evento de bienvenidas y despedidas
+  // Bienvenidas
   sock.ev.on('group-participants.update', async (update) => {
     const { id, participants, action } = update
-
-    // Solo procesar entradas y salidas
     if (action !== 'add') return
-
     try {
-      // Consultar config del grupo en DB
       const cfg = getGroupConfig(id)
       if (!cfg.welcomeMessage) return
-
       for (const p of participants) {
         let participantId = typeof p === 'string' ? p : (p.id || p.jid || p)
-
         let realJid = participantId
-        try {
-          realJid = await getRealJid(sock, participantId, { key: { remoteJid: id } })
-        } catch {}
-
+        try { realJid = await getRealJid(sock, participantId, { key: { remoteJid: id } }) } catch {}
         let phoneNumber = cleanNumber(realJid)
-        let userName = phoneNumber
-
-        try {
-          const contact = await sock.getContact(participantId)
-          userName = contact.notify || contact.name || phoneNumber
-        } catch {}
-
-        if (action === 'add') {
-          // Texto personalizado del grupo o fallback al config
-          const plantilla = cfg.welcomeText || config.welcomeText
-          const mensaje = plantilla.replace('@user', `@${participantId.split('@')[0]}`)
-          await sock.sendMessage(id, {
-            text: mensaje,
-            mentions: [participantId]
-          })
-        }
+        const plantilla = cfg.welcomeText || config.welcomeText
+        const mensaje   = plantilla.replace('@user', `@${participantId.split('@')[0]}`)
+        await sock.sendMessage(id, { text: mensaje, mentions: [participantId] })
       }
-    } catch (err) {}
+    } catch {}
   })
 
-  // Solo preguntar si NO hay sesión guardada
+  // Pairing code — solo si no hay sesión y no usa QR
   if (!hasSession && !config.useQR) {
     let numero = config.botNumber
     if (numero) {
@@ -155,10 +130,8 @@ async function startBot() {
     } else {
       numero = await askQuestion('Ingresa tu número: ')
     }
-
     const numeroLimpio = formatPhoneNumber(numero).replace(/\D/g, '')
     console.log(`Solicitando código para ${numeroLimpio}...`)
-
     try {
       const code = await sock.requestPairingCode(numeroLimpio)
       console.log(`CÓDIGO: ${code.match(/.{1,4}/g)?.join('-') || code}`)
@@ -171,11 +144,13 @@ async function startBot() {
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update
+
     if (qr && !hasSession && config.useQR) {
       console.log('\n')
       qrcode.generate(qr, { small: true })
       console.log('\n')
     }
+
     if (connection === 'close') {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
       if (shouldReconnect) {
@@ -190,26 +165,33 @@ async function startBot() {
       logSeparator()
       handler.initializeAntiCall(sock)
       startAutoBio(sock)
+
+      // Reconectar subbots guardados
+      if (config.subbot) {
+        reconnectSavedSessions(
+          (num) => logSystem(`Subbot ${num} reconectado`, 'info'),
+          (num, reason) => logSystem(`Subbot ${num} desconectado (${reason})`, 'error')
+        )
+      }
     }
   })
 
   sock.ev.on('creds.update', saveCreds)
-  
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
     for (const msg of messages) {
       if (!msg.message || !msg.key?.id) continue
       const from = msg.key.remoteJid
       if (!from || from.includes('@broadcast') || from.includes('status.broadcast')) continue
-      
-      const now = Date.now() / 1000
+      const now     = Date.now() / 1000
       const msgTime = msg.messageTimestamp || 0
       if (now - msgTime > 10) continue
-      
       const msgId = msg.key.id
       if (processedMessages.has(msgId)) continue
       processedMessages.add(msgId)
-      await handler.handleMessage(sock, msg, store)
+      // Paralelo directo — sin await
+      handler.handleMessage(sock, msg, store).catch(() => {})
     }
   })
 
