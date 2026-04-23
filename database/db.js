@@ -1,6 +1,7 @@
 import { Low } from 'lowdb'
 import { JSONFile } from 'lowdb/node'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { cleanNumber } from '../utils/jid.js'
 
