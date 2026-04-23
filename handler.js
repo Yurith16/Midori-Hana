@@ -63,8 +63,6 @@ async function scanDir(dir, hot = false) {
 }
 
 watchPlugins(() => reloadPlugins())
-
-// Cargar comandos iniciales en paralelo
 await scanDir(path.join(__dirname, 'plugins'), false)
 logEvent('Comandos', `${commands.size} disponibles`)
 
@@ -150,24 +148,33 @@ async function resolveDisplaySender(sock, sender, msg) {
   try { return await getRealJid(sock, sender, msg) } catch { return sender }
 }
 
-// Cola de procesamiento por chat para evitar race conditions
-const processingQueues = new Map()
-
-async function enqueue(chatId, fn) {
-  if (!processingQueues.has(chatId)) processingQueues.set(chatId, Promise.resolve())
-  const queue = processingQueues.get(chatId).then(fn).catch(() => {})
-  processingQueues.set(chatId, queue)
-  await queue
-  // Limpiar colas vacías periódicamente
-  if (processingQueues.size > 500) {
-    for (const [k] of processingQueues) {
-      if (k !== chatId) processingQueues.delete(k)
-      if (processingQueues.size < 100) break
+// ── Helper para DB de subbot ──────────────────────────────
+function getGroupConfigFromDb(db, groupId) {
+  if (!db.data.groups[groupId]) {
+    db.data.groups[groupId] = {
+      groupName:       '',
+      antiLink:        false,
+      adminMode:       false,
+      welcomeMessage:  false,
+      welcomeText:     '',
+      goodbyeText:     '',
+      nsfwEnabled:     false,
+      reactionEnabled: false,
+      activity:        {},
+      warns:           {},
+      mutedUsers:      {}
     }
+    db.write()
   }
+  const g = db.data.groups[groupId]
+  if (!g.activity)    { g.activity = {};    db.write() }
+  if (!g.warns)       { g.warns = {};       db.write() }
+  if (!g.mutedUsers)  { g.mutedUsers = {};  db.write() }
+  return g
 }
 
-export async function handleMessage(sock, msg, store) {
+// ── Entrada pública ───────────────────────────────────────
+export async function handleMessage(sock, msg, store, subbotDb = null) {
   if (!config) return
   if (sock.ev) sock.logger = logger
   if (!sock.generateWAMessageFromContent) sock.generateWAMessageFromContent = generateWAMessageFromContent
@@ -175,11 +182,11 @@ export async function handleMessage(sock, msg, store) {
   const from = msg.key?.remoteJid
   if (!from) return
 
-  // Procesar mensajes del mismo chat en orden, pero distintos chats en paralelo
-  await enqueue(from, () => _processMessage(sock, msg, store, from))
+  // Procesar en paralelo directo — sin cola
+  _processMessage(sock, msg, store, from, subbotDb).catch(() => {})
 }
 
-async function _processMessage(sock, msg, store, from) {
+async function _processMessage(sock, msg, store, from, subbotDb = null) {
   try {
     const isGroup  = from.endsWith('@g.us')
     const sender   = msg.key.participant || from
@@ -198,7 +205,10 @@ async function _processMessage(sock, msg, store, from) {
       if (gName) updateGroupName(from, gName)
     }
 
-    const groupCfg = isGroup ? getGroupConfig(from) : null
+    // Usar DB del subbot si existe, si no la principal
+    const groupCfg = isGroup
+      ? (subbotDb ? getGroupConfigFromDb(subbotDb, from) : getGroupConfig(from))
+      : null
 
     // AntiLink
     if (isGroup && groupCfg?.antiLink && !isUserOwner) {
@@ -224,7 +234,7 @@ async function _processMessage(sock, msg, store, from) {
                  msg.message?.videoMessage?.caption ||
                  msg.message?.documentMessage?.caption || ''
 
-    // Mute — eliminar mensajes de usuarios silenciados
+    // Mute
     if (isGroup && !isUserOwner) {
       const isMuted = isUserMuted(from, senderNumber)
       if (isMuted) {
@@ -242,36 +252,28 @@ async function _processMessage(sock, msg, store, from) {
 
     const { matched, prefix, text: cmdText } = getCommandText(text)
 
-    // Si el mensaje NO tiene prefijo (matched es false) entra aquí
     if (!text || !matched) {
       if (text) {
-        // --- DETECTOR DE RESPUESTAS (TRIVIA) ---
-        // Buscamos en todos los comandos cargados alguno que tenga la función 'onMessage'
         const triviaPlugin = Array.from(commands.values()).find(p => p.onMessage)
-        if (triviaPlugin) {
-          await triviaPlugin.onMessage(sock, msg, { from, text })
-        }
-        // ---------------------------------------
-
-        const groupName = isGroup ? await getGroupName(sock, from) : null
+        if (triviaPlugin) await triviaPlugin.onMessage(sock, msg, { from, text })
+        const groupName     = isGroup ? await getGroupName(sock, from) : null
         const displaySender = await resolveDisplaySender(sock, sender, msg)
         logMessage({ sender: displaySender, message: text, isGroup, groupName, userName })
       }
-      return 
+      return
     }
 
-    const args = cmdText.trim().split(/\s+/)
+    const args    = cmdText.trim().split(/\s+/)
     const cmdName = args.shift().toLowerCase()
-    const cmd = commands.get(cmdName)
+    const cmd     = commands.get(cmdName)
 
-    // Si el comando no existe (ejemplo: .hola), también revisamos si es respuesta antes de salir
     if (!cmd) {
-       const triviaPlugin = Array.from(commands.values()).find(p => p.onMessage)
-       if (triviaPlugin) await triviaPlugin.onMessage(sock, msg, { from, text })
-       return
+      const triviaPlugin = Array.from(commands.values()).find(p => p.onMessage)
+      if (triviaPlugin) await triviaPlugin.onMessage(sock, msg, { from, text })
+      return
     }
 
-    // Modo admin — solo bloquea comandos
+    // Modo admin
     if (isGroup && groupCfg?.adminMode && !isUserOwner) {
       const isAdmin = await isGroupAdmin(sock, from, sender)
       if (!isAdmin) {
@@ -302,24 +304,28 @@ async function _processMessage(sock, msg, store, from) {
     const groupName = isGroup ? await getGroupName(sock, from) : null
 
     if (!isGroup && !config.allowPrivate && !isUserOwner) {
-      await sock.sendMessage(from, { text: `Los comandos solo están disponibles en el grupo oficial.\n${config.grupoOficial}` }, { quoted: msg })
+      await sock.sendMessage(from, {
+        text: `Los comandos solo están disponibles en el grupo oficial.\n${config.grupoOficial}`
+      }, { quoted: msg })
       return
     }
 
     // NSFW
     if (cmd.nsfw && isGroup && !groupCfg?.nsfwEnabled && !isUserOwner) {
       await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
-      await sock.sendMessage(from, { text: 'El contenido +18 no está habilitado en este grupo. Un admin puede activarlo con `.enable nsfw` 🍃' }, { quoted: msg })
+      await sock.sendMessage(from, {
+        text: 'El contenido +18 no está habilitado en este grupo. Un admin puede activarlo con `.enable nsfw` 🍃'
+      }, { quoted: msg })
       return
     }
 
     const displaySender = await resolveDisplaySender(sock, sender, msg)
 
     logCommand({
-      command: cmdName,
-      sender: displaySender,
+      command:  cmdName,
+      sender:   displaySender,
       userName: userName || await getUserName(sock, sender),
-      isOwner: isUserOwner,
+      isOwner:  isUserOwner,
       isGroup,
       groupName,
       args,
@@ -336,10 +342,13 @@ async function _processMessage(sock, msg, store, from) {
       return
     }
 
-    await cmd.execute(sock, msg, { args, from, isGroup, sender, isOwner: isUserOwner, groupName, store, config })
+    await cmd.execute(sock, msg, {
+      args, from, isGroup, sender,
+      isOwner: isUserOwner, groupName,
+      store, config
+    })
 
   } catch (err) {
-    // Silenciar errores de sesión corrupta de Baileys
     if (err?.message?.includes('Bad MAC') || err?.message?.includes('decrypt') || err?.message?.includes('session')) return
     logError(err, 'Handler')
   }
