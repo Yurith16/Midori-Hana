@@ -1,30 +1,60 @@
 import axios from 'axios'
 
+const activeUsers = new Map()
+
+async function pinterestSearch(query) {
+  try {
+    const response = await axios.post('https://panel.apinexus.fun/api/pinterest/buscar', 
+      { query: query },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'antbx21e5jhac'
+        },
+        timeout: 20000
+      }
+    )
+
+    if (!response.data?.success || !response.data?.data?.imagenes) {
+      throw new Error('Sin resultados')
+    }
+
+    const imagenes = response.data.data.imagenes.slice(0, 5)
+    
+    if (!imagenes.length) throw new Error('Sin resultados válidos')
+    
+    return imagenes.map(url => ({ imageUrl: url }))
+
+  } catch (error) {
+    throw new Error('No se pudo obtener resultados')
+  }
+}
+
 export default {
-  command: ['img', 'imagen', 'buscarimg'],
-  execute: async (sock, msg, { from, args }) => {
-    // Validación estética
+  command: ['pinterest', 'pin', 'pins'],
+  group: false,
+  owner: false,
+
+  async execute(sock, msg, { args, from }) {
+    const userId = msg.key.participant || from
+
+    if (activeUsers.has(userId)) return
+
     if (!args[0]) {
       await sock.sendMessage(from, { react: { text: '🫢', key: msg.key } })
-      await sock.sendMessage(from, { text: '> ¿Qué imagen desea buscar? 🍃' }, { quoted: msg })
+      await sock.sendMessage(from, { text: '> ¿Qué deseas buscar en Pinterest? 🍃' }, { quoted: msg })
       return
     }
 
-    const query = args.join(' ')
-    await sock.sendMessage(from, { react: { text: '🍃', key: msg.key } })
+    activeUsers.set(userId, true)
+    await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } })
 
     try {
-      const { data: res } = await axios.post('https://panel.apinexus.fun/api/imagen/buscar', 
-        { query: query }, 
-        { headers: { 'x-api-key': 'antbx21e5jhac' } }
-      )
+      const query = args.join(' ')
+      const imagenes = await pinterestSearch(query)
 
-      if (!res.success || !res.data || res.data.imagenes.length === 0) throw new Error()
+      if (!imagenes.length) throw new Error('Sin resultados')
 
-      // Mezclamos y tomamos máximo 10 imágenes
-      const imagenes = res.data.imagenes.sort(() => 0.5 - Math.random()).slice(0, 10)
-
-      // Creamos el mensaje base del álbum
       const album = sock.generateWAMessageFromContent(from, {
         messageContextInfo: {},
         albumMessage: {
@@ -42,29 +72,30 @@ export default {
 
       await sock.relayMessage(from, album.message, { messageId: album.key.id })
 
-      // Enviamos cada imagen vinculada al álbum (sin caption)
       for (let i = 0; i < imagenes.length; i++) {
+        const img = imagenes[i]
         const mediaMsg = await sock.generateWAMessage(from, {
-          image: { url: imagenes[i] }
+          image: { url: img.imageUrl },
+          caption: i === 0 ? `> Aquí tiene su pedido @${userId.split('@')[0]} 🍃` : '',
+          ...(i === 0 ? { mentions: [userId] } : {})
         }, { upload: sock.waUploadToServer })
 
         mediaMsg.message.messageContextInfo = {
-          messageAssociation: { 
-            associationType: 1, 
-            parentMessageKey: album.key 
-          }
+          messageAssociation: { associationType: 1, parentMessageKey: album.key }
         }
 
         await sock.relayMessage(from, mediaMsg.message, { messageId: mediaMsg.key.id })
-
-        // Pequeño delay para evitar saturación
         await new Promise(resolve => setTimeout(resolve, 500))
       }
 
       await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
 
     } catch (err) {
+      console.error(err)
       await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } })
+      await sock.sendMessage(from, { text: '> No se encontraron imágenes para esa búsqueda 🍃' }, { quoted: msg })
+    } finally {
+      activeUsers.delete(userId)
     }
   }
 }

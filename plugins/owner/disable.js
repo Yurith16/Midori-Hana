@@ -28,7 +28,8 @@ const ownerOpts = {
   autoread:     { key: 'autoRead',     label: 'Auto leer'        },
   autobio:      { key: 'autoBio',      label: 'Auto bio'         },
   anticall:     { key: 'antiCall',     label: 'Anti llamadas'    },
-  allowprivate: { key: 'allowPrivate', label: 'Mensajes privados' }
+  allowprivate: { key: 'allowPrivate', label: 'Mensajes privados' },
+  subbot:       { key: 'subbot',       label: 'Sistema Subbot'   }
 }
 
 export default {
@@ -66,6 +67,7 @@ export default {
         menu += `> 🧬 Auto bio: ${global.config.autoBio ? '🟢 ON' : '🔴 OFF'} — \`.disable autobio\`\n`
         menu += `> 📵 Anti llamadas: ${global.config.antiCall ? '🟢 ON' : '🔴 OFF'} — \`.disable anticall\`\n`
         menu += `> 💬 Privados: ${global.config.allowPrivate ? '🟢 ON' : '🔴 OFF'} — \`.disable allowprivate\`\n`
+        menu += `> 🤖 Subbots: ${global.config.subbot ? '🟢 ON' : '🔴 OFF'} — \`.disable subbot\`\n`
       }
 
       if (!isAdmin && !isOwner) {
