@@ -21,8 +21,6 @@ export async function loadDatabase() {
   console.log('[DB] Base de datos cargada')
 }
 
-// ─── GRUPOS ───────────────────────────────────────────────
-
 export function getGroupConfig(groupId) {
   if (!db.data.groups[groupId]) {
     db.data.groups[groupId] = {
@@ -40,14 +38,13 @@ export function getGroupConfig(groupId) {
     }
     db.write()
   }
-
   const g = db.data.groups[groupId]
-  if (!g.activity)                       { g.activity = {};           db.write() }
-  if (!g.warns)                          { g.warns = {};              db.write() }
-  if (!g.mutedUsers)                     { g.mutedUsers = {};         db.write() }
-  if (g.groupName       === undefined)   { g.groupName = '';          db.write() }
-  if (g.nsfwEnabled     === undefined)   { g.nsfwEnabled = false;     db.write() }
-  if (g.reactionEnabled === undefined)   { g.reactionEnabled = false; db.write() }
+  if (!g.activity)                     { g.activity = {};           db.write() }
+  if (!g.warns)                        { g.warns = {};              db.write() }
+  if (!g.mutedUsers)                   { g.mutedUsers = {};         db.write() }
+  if (g.groupName       === undefined) { g.groupName = '';          db.write() }
+  if (g.nsfwEnabled     === undefined) { g.nsfwEnabled = false;     db.write() }
+  if (g.reactionEnabled === undefined) { g.reactionEnabled = false; db.write() }
   return g
 }
 
@@ -66,8 +63,6 @@ export function updateGroupName(groupId, name) {
   }
 }
 
-// ─── ACTIVIDAD ────────────────────────────────────────────
-
 export function trackActivity(groupId, userId) {
   const cfg  = getGroupConfig(groupId)
   const id   = cleanNumber(userId)
@@ -78,8 +73,6 @@ export function trackActivity(groupId, userId) {
   }
   db.write()
 }
-
-// ─── WARNS ────────────────────────────────────────────────
 
 export function getWarnEntry(groupId, userId) {
   const cfg = getGroupConfig(groupId)
@@ -120,9 +113,6 @@ export function getAllWarns(groupId) {
   return getGroupConfig(groupId).warns || {}
 }
 
-
-// ─── MUTE ─────────────────────────────────────────────────
-
 export function setMute(groupId, userId, status = true) {
   const cfg = getGroupConfig(groupId)
   const id  = cleanNumber(userId)
@@ -147,19 +137,32 @@ const subbotDbs = new Map()
 export async function getSubbotDb(numero) {
   if (subbotDbs.has(numero)) return subbotDbs.get(numero)
 
-  const dir  = path.join(__dirname, '..', 'db-subbot')
+  const dir = path.join(__dirname, '..', 'db-subbot')
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
 
-  const file    = path.join(dir, `${numero}.json`)
-  const adapter = new JSONFile(file)
-  const db      = new Low(adapter, { groups: {} })
-  await db.read()
-  if (!db.data)        db.data = { groups: {} }
-  if (!db.data.groups) db.data.groups = {}
-  await db.write()
+  const dbFile   = path.join(dir, `${numero}.json`)
+  const adapter  = new JSONFile(dbFile)
+  const subbotDb = new Low(adapter, { groups: {}, settings: {} })
+  await subbotDb.read()
+  if (!subbotDb.data)          subbotDb.data = { groups: {}, settings: {} }
+  if (!subbotDb.data.groups)   subbotDb.data.groups = {}
+  if (!subbotDb.data.settings) subbotDb.data.settings = {}
+  await subbotDb.write()
 
-  subbotDbs.set(numero, db)
-  return db
+  subbotDbs.set(numero, subbotDb)
+  return subbotDb
+}
+
+export async function getSubbotSettings(numero) {
+  const subbotDb = await getSubbotDb(numero)
+  return subbotDb.data.settings
+}
+
+export async function updateSubbotSettings(numero, updates) {
+  const subbotDb = await getSubbotDb(numero)
+  Object.assign(subbotDb.data.settings, updates)
+  await subbotDb.write()
+  return subbotDb.data.settings
 }
 
 export default db
