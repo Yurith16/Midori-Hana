@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { getSubbotSettings } from '../../database/db-subbot.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -74,10 +75,27 @@ function buildCatBox(catName, cmds, bullet) {
 
 export default {
   command: ['menu', 'help', 'ayuda'],
-  execute: async (sock, msg, { from, config: cfg }) => {
+  execute: async (sock, msg, { from, config: cfg, subbotNumero }) => {
     try {
-      const prefix = cfg?.prefix || global.config?.prefix || '.'
+      const isSubbot = !!subbotNumero
       const bullet = getSessionBullet()
+
+      let subbotPrefijos = null
+      let subbotPrefixDisplay = null
+      
+      if (isSubbot && subbotNumero) {
+        try {
+          const settings = await getSubbotSettings(subbotNumero)
+          subbotPrefijos = settings.prefijos
+          if (subbotPrefijos && Array.isArray(subbotPrefijos) && subbotPrefijos.length > 0) {
+            subbotPrefixDisplay = subbotPrefijos[0]
+          }
+        } catch (err) {
+          console.error('Error obteniendo settings del subbot:', err)
+        }
+      }
+
+      let prefixDisplay = subbotPrefixDisplay || cfg?.prefix || global.config?.prefix || '.'
 
       await sock.sendMessage(from, { react: { text: '🌸', key: msg.key } })
 
@@ -95,7 +113,8 @@ export default {
               const content = fs.readFileSync(full, 'utf8')
               if (content.includes('command:')) {
                 const folderName = path.basename(path.dirname(full))
-                const cat = folderName === 'plugins' ? 'main' : folderName
+                const cat = folderName === 'plugins' ? 'main' : 
+                           folderName === 'subbots' ? 'subbots' : folderName
 
                 if (!cats[cat]) cats[cat] = 0
                 cats[cat]++
@@ -112,10 +131,20 @@ export default {
       scan(pluginsDir)
 
       const categoryMap = {
-        main: 'Principal', 'I-A-S': 'Inteligencia Artificial', anime: 'Anime',
-        'random-reacciones': 'Reacciones', descargas: 'Descargas', busqueda: 'Busquedas',
-        herramientas: 'Herramientas', economia: 'Economia', juegos: 'Juegos',
-        social: 'Social', administracion: 'Grupos', '+18': 'Contenido +18', owner: 'Owner'
+        main: 'Principal', 
+        'I-A-S': 'Inteligencia Artificial', 
+        anime: 'Anime',
+        'random-reacciones': 'Reacciones', 
+        descargas: 'Descargas', 
+        busqueda: 'Busquedas',
+        herramientas: 'Herramientas', 
+        economia: 'Economia', 
+        juegos: 'Juegos',
+        social: 'Social', 
+        subbots: 'Subbots',
+        administracion: 'Grupos', 
+        '+18': 'Contenido +18', 
+        owner: 'Owner'
       }
 
       const { hora, saludo, fecha } = getHondurasInfo()
@@ -124,37 +153,52 @@ export default {
       const botName   = cfg?.botName || global.config?.botName || 'Midori-Hana'
       const totalCmds = Object.values(cats).reduce((acc, n) => acc + n, 0)
 
-      // ── Encabezado ──
       let menuTxt = `╭─〔 🌸 *${toMono(botName.replace(/©\s*/g, '').toUpperCase())}* 🌸 〕\n`
       menuTxt += `│\n`
       menuTxt += `│ _${saludo}, ${username}_\n`
       menuTxt += `│ ${bullet} ${fecha}\n`
       menuTxt += `│ ${bullet} ${hora} (HN)\n`
       menuTxt += `│\n`
+      if (isSubbot) menuTxt += `│ 🍃 Modo subbot\n`
       menuTxt += `╰─────────────────\n\n`
 
-      // ── Info ──
       menuTxt += `╭─〔 ${toBold('Info del Bot')} 〕\n`
       menuTxt += `│\n`
       menuTxt += `│ ${bullet} Creador: ${cfg?.ownerName || global.config?.ownerName || 'HERNANDEZ'}\n`
       menuTxt += `│ ${bullet} Activo: ${uptime}\n`
-      menuTxt += `│ ${bullet} Prefix: ${Array.isArray(prefix) ? prefix.join('  ') : prefix}\n`
+      menuTxt += `│ ${bullet} Prefix: ${prefixDisplay}\n`
       menuTxt += `│ ${bullet} Comandos: ${totalCmds}\n`
       menuTxt += `│\n`
       menuTxt += `╰─────────────────\n\n`
 
-      // ── Categorías ──
-      const orden = ['main','I-A-S','anime','random-reacciones','descargas','busqueda','herramientas','economia','juegos','social','administracion','+18','owner']
+      const orden = ['main','I-A-S','anime','random-reacciones','descargas','busqueda','herramientas','economia','juegos','social','subbots','administracion','+18','owner']
+      
       for (const cat of orden) {
         if (cats[cat]) {
-          const catName = categoryMap[cat] || cat
-          const cmdList = (catCmds[cat] || []).sort().map(c => `${prefix}${c}`)
-          menuTxt += buildCatBox(catName, cmdList, bullet)
-          menuTxt += '\n'
+          let cmdList = (catCmds[cat] || []).sort().map(c => `${prefixDisplay}${c}`)
+          
+          if (isSubbot && cat === 'administracion') {
+            cmdList = cmdList.filter(cmd => {
+              const cmdName = cmd.replace(prefixDisplay, '')
+              return cmdName !== 'enable' && cmdName !== 'disable'
+            })
+          }
+          
+          if (isSubbot && cat === 'main') {
+            cmdList = cmdList.filter(cmd => {
+              const cmdName = cmd.replace(prefixDisplay, '')
+              return cmdName !== 'addprefix' && cmdName !== 'delprefix' && cmdName !== 'addpf' && cmdName !== 'delpf'
+            })
+          }
+          
+          if (cmdList.length > 0) {
+            const catName = categoryMap[cat] || cat
+            menuTxt += buildCatBox(catName, cmdList, bullet)
+            menuTxt += '\n'
+          }
         }
       }
 
-      // ── Pie ──
       menuTxt += `> *${toMono(botName)}*`
 
       const randomImg = MENU_IMAGES[Math.floor(Math.random() * MENU_IMAGES.length)]

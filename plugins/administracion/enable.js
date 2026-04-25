@@ -1,5 +1,4 @@
-import { getGroupConfig, updateGroupConfig, updateSubbotSettings, getSubbotSettings } from '../../database/db.js'
-//import { forceReloadConfig } from '../../handler.js'
+import { getGroupConfig, updateGroupConfig } from '../../database/db.js'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -14,7 +13,6 @@ async function enableConfigField(field) {
   const idx    = lines.findIndex(l => l.match(new RegExp(`^\\s*${field}:`)))
   if (idx !== -1) lines[idx] = lines[idx].replace(/:\s*(true|false)/, ': true')
   fs.writeFileSync(configPath, lines.join('\n'), 'utf8')
-  await forceReloadConfig()
 }
 
 const adminOpts = {
@@ -39,7 +37,15 @@ export default {
   group:   false,
   owner:   false,
 
-  async execute(sock, msg, { args, from, isOwner, isSubbotOwner, subbotNumero }) {
+  async execute(sock, msg, { args, from, isOwner, subbotNumero }) {
+    // Si es un subbot, redirigir
+    if (subbotNumero) {
+      await sock.sendMessage(from, { 
+        text: `> 🍃 *Los subbots usan comandos exclusivos*\n\n> Para activar opciones en tu subbot usa:\n> 📌 \`.sbenable\`\n> 📌 \`.sbdisable\`` 
+      }, { quoted: msg })
+      return
+    }
+
     const metadata = from.endsWith('@g.us') ? await sock.groupMetadata(from) : null
     const sender   = msg.key.participant || msg.key.remoteJid
     const isAdmin  = metadata
@@ -50,12 +56,9 @@ export default {
     const cfg    = metadata ? getGroupConfig(from) : {}
     const option = args[0]?.toLowerCase()
 
-    // Settings actuales para mostrar estado correcto
-    const sbSettings = subbotNumero ? await getSubbotSettings(subbotNumero) : null
-
     if (!option) {
       let menu = `> 🍃 *CONFIGURACIÓN — ACTIVAR*\n\n`
-      if (isAdmin || isOwner || isSubbotOwner) {
+      if (isAdmin || isOwner) {
         menu += `> *Opciones de grupo (admins)*\n`
         menu += `> 🔗 AntiLinks: ${cfg.antiLink ? '🟢 ON' : '🔴 OFF'} — \`.enable antilink\`\n`
         menu += `> 👮 Modo admin: ${cfg.adminMode ? '🟢 ON' : '🔴 OFF'} — \`.enable adminmode\`\n`
@@ -72,14 +75,7 @@ export default {
         menu += `> 💬 Privados: ${global.config.allowPrivate ? '🟢 ON' : '🔴 OFF'} — \`.enable allowprivate\`\n`
         menu += `> 🤖 Subbots: ${global.config.subbot ? '🟢 ON' : '🔴 OFF'} — \`.enable subbot\`\n`
       }
-      if (isSubbotOwner && sbSettings) {
-        menu += `\n> *Opciones de mi subbot*\n`
-        menu += `> 👁️ Auto leer: ${sbSettings.autoRead ? '🟢 ON' : '🔴 OFF'} — \`.enable autoread\`\n`
-        menu += `> 🧬 Auto bio: ${sbSettings.autoBio ? '🟢 ON' : '🔴 OFF'} — \`.enable autobio\`\n`
-        menu += `> 📵 Anti llamadas: ${sbSettings.antiCall ? '🟢 ON' : '🔴 OFF'} — \`.enable anticall\`\n`
-        menu += `> 💬 Privados: ${sbSettings.allowPrivate ? '🟢 ON' : '🔴 OFF'} — \`.enable allowprivate\`\n`
-      }
-      if (!isAdmin && !isOwner && !isSubbotOwner) {
+      if (!isAdmin && !isOwner) {
         menu = '> 🚫 No tienes permisos para usar este comando 🍃'
       }
       await sock.sendMessage(from, { text: menu }, { quoted: msg })
@@ -87,7 +83,7 @@ export default {
     }
 
     if (adminOpts[option]) {
-      if (!isAdmin && !isOwner && !isSubbotOwner) {
+      if (!isAdmin && !isOwner) {
         await sock.sendMessage(from, { react: { text: '🚫', key: msg.key } })
         await sock.sendMessage(from, { text: '> No tienes permisos para usar este comando 🍃' }, { quoted: msg })
         return
@@ -103,20 +99,6 @@ export default {
     }
 
     if (ownerOpts[option]) {
-      // Si es subbot owner, guarda en su propia DB
-      if (isSubbotOwner && subbotNumero) {
-        const { key, label } = ownerOpts[option]
-        // subbot no puede tocar subbot ni maintenance
-        if (key === 'subbot' || key === 'maintenance') {
-          await sock.sendMessage(from, { text: '> ❌ No puedes cambiar esta opción desde un subbot.' }, { quoted: msg })
-          return
-        }
-        await updateSubbotSettings(subbotNumero, { [key]: true })
-        await sock.sendMessage(from, { text: `> 🍃 *${label}* activado 🟢` }, { quoted: msg })
-        return
-      }
-
-      // Bot principal — solo el owner principal
       if (!isOwner) {
         await sock.sendMessage(from, { react: { text: '🚫', key: msg.key } })
         await sock.sendMessage(from, { text: '> Solo el owner puede cambiar esta opción 🍃' }, { quoted: msg })

@@ -1,5 +1,31 @@
 import { getGroupConfig } from '../../database/db.js'
+import { getSubbotGroupConfig } from '../../database/db-subbot.js'
 import { getRealJid, cleanNumber } from '../../utils/jid.js'
+
+// Caché para metadata de grupos (evita rate-limit)
+const groupMetadataCache = new Map()
+
+async function getGroupMetadataWithCache(sock, groupId, force = false) {
+  const now = Date.now()
+  const cached = groupMetadataCache.get(groupId)
+  
+  // Si hay caché y no ha pasado 1 minuto, usarlo
+  if (!force && cached && (now - cached.timestamp) < 60000) {
+    return cached.data
+  }
+  
+  try {
+    const metadata = await sock.groupMetadata(groupId)
+    groupMetadataCache.set(groupId, {
+      data: metadata,
+      timestamp: now
+    })
+    return metadata
+  } catch (err) {
+    if (cached?.data) return cached.data
+    throw err
+  }
+}
 
 function toMono(text) {
   const map = {
@@ -37,10 +63,16 @@ export default {
   group: true,
   owner: false,
 
-  async execute(sock, msg, { from, isOwner, subbotDb, subbotNumero }) {
-    const metadata = await sock.groupMetadata(from)
-    const sender   = msg.key.participant || msg.key.remoteJid
-    const isAdmin  = metadata.participants.find(p => p.id === sender)?.admin === 'admin' ||
+  async execute(sock, msg, { from, isOwner, subbotNumero }) {
+    const sender = msg.key.participant || msg.key.remoteJid
+    
+    // Pequeño delay para evitar rate-limit
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    // Usar caché para metadata
+    const metadata = await getGroupMetadataWithCache(sock, from)
+    
+    const isAdmin = metadata.participants.find(p => p.id === sender)?.admin === 'admin' ||
                      metadata.participants.find(p => p.id === sender)?.admin === 'superadmin'
 
     if (!isAdmin && !isOwner) {
@@ -52,12 +84,18 @@ export default {
     await sock.sendMessage(from, { react: { text: '⚙️', key: msg.key } })
 
     try {
-      // Usar DB del subbot si existe, si no la principal
-      const groupData = subbotDb
-        ? subbotDb.data.groups?.[from]
-        : getGroupConfig(from)
+      let activity = {}
 
-      const activity = groupData?.activity || {}
+      // Si es subbot, usar su base de datos
+      if (subbotNumero) {
+        const subbotGroupCfg = await getSubbotGroupConfig(subbotNumero, from)
+        activity = subbotGroupCfg?.activity || {}
+      } else {
+        // Si es bot principal, usar base de datos principal
+        const groupData = getGroupConfig(from)
+        activity = groupData?.activity || {}
+      }
+
       const botId    = cleanNumber(sock.user.id)
       const div      = `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄`
 
@@ -85,6 +123,8 @@ export default {
             count
           })
         }
+        // Pequeño delay entre cada fetch para evitar rate-limit
+        await new Promise(resolve => setTimeout(resolve, 100))
       }
 
       const admins        = conConteo.filter(p => p.isAdmin).sort((a, b) => b.count - a.count)
@@ -97,7 +137,7 @@ export default {
       txt += `│ ${toBold('Grupo:')} ${metadata.subject}\n`
       txt += `│ ${toBold('Miembros:')} ${conConteo.length}\n`
       txt += `│ ${toBold('Total msgs:')} ${totalMensajes}\n`
-      if (subbotNumero) txt += `│ ${toBold('Subbot:')} ${subbotNumero}\n`
+      if (subbotNumero) txt += `│ ${toBold('Subbot:')} +${subbotNumero}\n`
 
       if (admins.length > 0) {
         txt += `│ ${div}\n`

@@ -6,7 +6,14 @@ import { generateWAMessageFromContent, generateWAMessage } from '@whiskeysockets
 import { getRealJid, cleanNumber } from './utils/jid.js'
 import { logCommand, logError, logMessage, logEvent } from './utils/logger.js'
 import { watchPlugins } from './utils/pluginWatcher.js'
-import { getGroupConfig, loadDatabase, trackActivity, updateGroupName, isUserMuted } from './database/db.js'
+import {
+  getSubbotGroupConfig,
+  updateSubbotGroupConfig,
+  trackSubbotActivity,
+  updateSubbotGroupName,
+  isSubbotUserMuted,
+  getSubbotSettings
+} from './database/db-subbot.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
@@ -15,55 +22,54 @@ const logger     = pino({ level: 'silent' })
 let config   = null
 let commands = new Map()
 
-// Caché para groupMetadata (solo lo esencial)
-const groupMetadataCache = new Map()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutos
+// ========== SISTEMA DE CACHÉ ==========
+const groupMetadataCache = new Map() // groupId -> { data, timestamp }
+const groupNameCache = new Map()     // groupId -> { name, timestamp }
+const settingsCache = new Map()      // subbotNumero -> { settings, timestamp }
+const groupConfigCache = new Map()   // `${subbotNumero}:${groupId}` -> { config, timestamp }
 
-function getCachedGroupMetadata(groupId) {
-  const cached = groupMetadataCache.get(groupId)
-  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+const CACHE_TTL = {
+  GROUP_METADATA: 5 * 60 * 1000,  // 5 minutos
+  GROUP_NAME: 10 * 60 * 1000,     // 10 minutos
+  SETTINGS: 30 * 60 * 1000,       // 30 minutos
+  GROUP_CONFIG: 60 * 60 * 1000    // 1 hora
+}
+
+function getCached(key, cache, ttl) {
+  const cached = cache.get(key)
+  if (cached && (Date.now() - cached.timestamp) < ttl) {
     return cached.data
   }
   return null
 }
 
-function setCachedGroupMetadata(groupId, data) {
-  groupMetadataCache.set(groupId, { data, timestamp: Date.now() })
+function setCached(key, data, cache) {
+  cache.set(key, { data, timestamp: Date.now() })
 }
 
-// Limpiar caché cada 30 minutos
+// Limpiar caché cada hora
 setInterval(() => {
   groupMetadataCache.clear()
-}, 30 * 60 * 1000)
+  groupNameCache.clear()
+  settingsCache.clear()
+  groupConfigCache.clear()
+  console.log('[CACHE] Limpieza completa de caché')
+}, 60 * 60 * 1000)
 
-await loadDatabase()
+// ========== FIN CACHÉ ==========
 
 async function reloadConfig() {
   try {
     const newConfig = await import(`./config.js?update=${Date.now()}`)
     config          = newConfig.default
-    global.config   = config
-    logEvent('Configuración', 'Recargada')
+    logEvent('Subbot Config', 'Recargada')
   } catch (err) {
-    logError(err, 'Recargando config')
+    logError(err, 'Subbot reloadConfig')
   }
 }
 
 await reloadConfig()
 fs.watch(path.join(__dirname, 'config.js'), () => reloadConfig())
-
-export async function forceReloadConfig() {
-  await reloadConfig()
-}
-
-async function reloadPlugins() {
-  logEvent('Plugins', 'Recargando...')
-  commands.clear()
-  const pluginsDir = path.join(__dirname, 'plugins')
-  if (!fs.existsSync(pluginsDir)) return
-  await scanDir(pluginsDir, true)
-  logEvent('Plugins', `${commands.size} disponibles`)
-}
 
 async function scanDir(dir, hot = false) {
   const files = fs.readdirSync(dir)
@@ -87,9 +93,15 @@ async function scanDir(dir, hot = false) {
   }))
 }
 
-watchPlugins(() => reloadPlugins())
+watchPlugins(() => {
+  logEvent('Subbot Plugins', 'Recargando...')
+  commands.clear()
+  const pluginsDir = path.join(__dirname, 'plugins')
+  if (fs.existsSync(pluginsDir)) scanDir(pluginsDir, true)
+})
+
 await scanDir(path.join(__dirname, 'plugins'), false)
-logEvent('Comandos', `${commands.size} disponibles`)
+logEvent('Subbot Comandos', `${commands.size} disponibles`)
 
 const userNames    = new Map()
 const userCommands = new Map()
@@ -101,7 +113,7 @@ setInterval(() => {
   }
 }, 60000)
 
-async function isOwner(sock, sender, msg, fromMe) {
+async function isMainOwner(sock, sender, msg, fromMe) {
   if (fromMe) return true
   let num = sender.split('@')[0]
   try {
@@ -131,19 +143,45 @@ async function isGroupAdmin(sock, groupId, userId) {
 }
 
 async function getGroupMetadataWithCache(sock, groupId) {
-  const cached = getCachedGroupMetadata(groupId)
+  const cached = getCached(groupId, groupMetadataCache, CACHE_TTL.GROUP_METADATA)
   if (cached) return cached
   
   const metadata = await sock.groupMetadata(groupId)
-  setCachedGroupMetadata(groupId, metadata)
+  setCached(groupId, metadata, groupMetadataCache)
   return metadata
 }
 
-async function getGroupName(sock, groupId) {
-  try { return (await getGroupMetadataWithCache(sock, groupId)).subject } catch { return null }
+async function getGroupNameWithCache(sock, groupId) {
+  const cached = getCached(groupId, groupNameCache, CACHE_TTL.GROUP_NAME)
+  if (cached) return cached
+  
+  try {
+    const name = (await sock.groupMetadata(groupId)).subject
+    setCached(groupId, name, groupNameCache)
+    return name
+  } catch { return null }
 }
 
-async function getUserName(sock, userId, pushName = null) {
+async function getSubbotSettingsWithCache(subbotNumero) {
+  const cached = getCached(subbotNumero, settingsCache, CACHE_TTL.SETTINGS)
+  if (cached) return cached
+  
+  const settings = await getSubbotSettings(subbotNumero)
+  setCached(subbotNumero, settings, settingsCache)
+  return settings
+}
+
+async function getSubbotGroupConfigWithCache(subbotNumero, groupId) {
+  const key = `${subbotNumero}:${groupId}`
+  const cached = getCached(key, groupConfigCache, CACHE_TTL.GROUP_CONFIG)
+  if (cached) return cached
+  
+  const config = await getSubbotGroupConfig(subbotNumero, groupId)
+  setCached(key, config, groupConfigCache)
+  return config
+}
+
+async function getUserNameWithCache(sock, userId, pushName = null) {
   if (pushName) { userNames.set(userId, pushName); return pushName }
   if (userNames.has(userId)) return userNames.get(userId)
   let name = userId.split('@')[0]
@@ -174,13 +212,16 @@ function extractText(msg) {
   )
 }
 
-function getPrefixes(cfg) {
+function getPrefixesFromSettings(cfg, subbotPrefijos) {
+  if (subbotPrefijos && Array.isArray(subbotPrefijos) && subbotPrefijos.length > 0) {
+    return subbotPrefijos
+  }
   const p = cfg?.prefix
   return Array.isArray(p) ? p : (p ? [p] : ['.'])
 }
 
-function getCommandText(text, cfg) {
-  for (const prefix of getPrefixes(cfg)) {
+function getCommandText(text, prefixes) {
+  for (const prefix of prefixes) {
     if (text.startsWith(prefix)) {
       return { matched: true, prefix, text: text.slice(prefix.length) }
     }
@@ -192,39 +233,29 @@ async function resolveDisplaySender(sock, sender, msg) {
   try { return await getRealJid(sock, sender, msg) } catch { return sender }
 }
 
-function getGroupConfigFromDb(db, groupId) {
-  if (!db.data.groups[groupId]) {
-    db.data.groups[groupId] = {
-      groupName: '', antiLink: false, adminMode: false,
-      welcomeMessage: false, welcomeText: '', goodbyeText: '',
-      nsfwEnabled: false, reactionEnabled: false,
-      activity: {}, warns: {}, mutedUsers: {}
-    }
-    db.write()
-  }
-  const g = db.data.groups[groupId]
-  if (!g.activity)   { g.activity = {};   db.write() }
-  if (!g.warns)      { g.warns = {};      db.write() }
-  if (!g.mutedUsers) { g.mutedUsers = {}; db.write() }
-  return g
-}
-
-export async function handleMessage(sock, msg, store, subbotDb = null, subbotSettings = null) {
+export async function handleSubbotMessage(sock, msg, store) {
   if (!config) return
   if (sock.ev) sock.logger = logger
   if (!sock.generateWAMessageFromContent) sock.generateWAMessageFromContent = generateWAMessageFromContent
   const from = msg.key?.remoteJid
   if (!from) return
-  _processMessage(sock, msg, store, from, subbotDb, subbotSettings).catch(() => {})
+  _processSubbotMessage(sock, msg, store, from).catch(() => {})
 }
 
-async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSettings = null) {
+async function _processSubbotMessage(sock, msg, store, from) {
   try {
-    const subbotNumero = sock.__numero || null
+    const subbotNumero = sock.__numero
 
-    const effectiveCfg = (subbotSettings && Object.keys(subbotSettings).length > 0)
-      ? { ...config, ...subbotSettings }
-      : config
+    const settings = await getSubbotSettingsWithCache(subbotNumero)
+    const effectiveCfg = {
+      ...config,
+      prefix:       settings.prefix       ?? config.prefix,
+      autoRead:     settings.autoRead     ?? config.autoRead,
+      autoBio:      settings.autoBio      ?? config.autoBio,
+      antiCall:     settings.antiCall     ?? config.antiCall,
+      antiSpam:     settings.antiSpam     ?? config.antiSpam,
+      allowPrivate: settings.allowPrivate ?? config.allowPrivate
+    }
 
     const isGroup  = from.endsWith('@g.us')
     const sender   = msg.key.participant || from
@@ -233,18 +264,18 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
     try { realSenderJid = await getRealJid(sock, sender, msg) } catch {}
     const senderNumber = cleanNumber(realSenderJid)
 
-    const isUserOwner     = await isOwner(sock, sender, msg, msg.key.fromMe)
-    const isSubbotOwnMsg  = await isSubbotOwner(sock, sender, msg, subbotNumero)
-    const userName        = msg.pushName
+    const isUserOwner    = await isMainOwner(sock, sender, msg, msg.key.fromMe)
+    const isSubbotOwnMsg = await isSubbotOwner(sock, sender, msg, subbotNumero)
+    const userName       = msg.pushName
 
     if (isGroup && !msg.key.fromMe) {
-      trackActivity(from, senderNumber)
-      const gName = await getGroupName(sock, from)
-      if (gName) updateGroupName(from, gName)
+      await trackSubbotActivity(subbotNumero, from, senderNumber)
+      const gName = await getGroupNameWithCache(sock, from)
+      if (gName) await updateSubbotGroupName(subbotNumero, from, gName)
     }
 
     const groupCfg = isGroup
-      ? (subbotDb ? getGroupConfigFromDb(subbotDb, from) : getGroupConfig(from))
+      ? await getSubbotGroupConfigWithCache(subbotNumero, from)
       : null
 
     if (isGroup && groupCfg?.antiLink && !isUserOwner && !isSubbotOwnMsg) {
@@ -262,7 +293,7 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
       try { await sock.readMessages([msg.key]) } catch {}
     }
 
-    if (userName) await getUserName(sock, sender, userName)
+    if (userName) await getUserNameWithCache(sock, sender, userName)
 
     const text = msg.message?.conversation ||
                  msg.message?.extendedTextMessage?.text ||
@@ -271,7 +302,7 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
                  msg.message?.documentMessage?.caption || ''
 
     if (isGroup && !isUserOwner && !isSubbotOwnMsg) {
-      const isMuted = isUserMuted(from, senderNumber)
+      const isMuted = await isSubbotUserMuted(subbotNumero, from, senderNumber)
       if (isMuted) {
         const isAdmin = await isGroupAdmin(sock, from, sender)
         if (!isAdmin) {
@@ -285,13 +316,15 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
       }
     }
 
-    const { matched, prefix, text: cmdText } = getCommandText(text, effectiveCfg)
+    const subbotPrefijos = settings.prefijos
+    const prefixes = getPrefixesFromSettings(effectiveCfg, subbotPrefijos)
+    const { matched, prefix, text: cmdText } = getCommandText(text, prefixes)
 
     if (!text || !matched) {
       if (text) {
         const triviaPlugin = Array.from(commands.values()).find(p => p.onMessage)
         if (triviaPlugin) await triviaPlugin.onMessage(sock, msg, { from, text })
-        const groupName     = isGroup ? await getGroupName(sock, from) : null
+        const groupName     = isGroup ? await getGroupNameWithCache(sock, from) : null
         const displaySender = await resolveDisplaySender(sock, sender, msg)
         logMessage({ sender: displaySender, message: text, isGroup, groupName, userName })
       }
@@ -335,7 +368,7 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
       }
     }
 
-    const groupName = isGroup ? await getGroupName(sock, from) : null
+    const groupName = isGroup ? await getGroupNameWithCache(sock, from) : null
 
     if (!isGroup && !effectiveCfg.allowPrivate && !isUserOwner && !isSubbotOwnMsg) {
       await sock.sendMessage(from, {
@@ -346,9 +379,7 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
 
     if (cmd.nsfw && isGroup && !groupCfg?.nsfwEnabled && !isUserOwner) {
       await sock.sendMessage(from, { react: { text: '🔞', key: msg.key } })
-      await sock.sendMessage(from, {
-        text: 'El contenido +18 no está habilitado en este grupo.'
-      }, { quoted: msg })
+      await sock.sendMessage(from, { text: 'El contenido +18 no está habilitado en este grupo.' }, { quoted: msg })
       return
     }
 
@@ -357,7 +388,7 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
     logCommand({
       command:  cmdName,
       sender:   displaySender,
-      userName: userName || await getUserName(sock, sender),
+      userName: userName || await getUserNameWithCache(sock, sender),
       isOwner:  isUserOwner,
       isGroup,
       groupName,
@@ -387,23 +418,49 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
 
   } catch (err) {
     if (err?.message?.includes('Bad MAC') || err?.message?.includes('decrypt') || err?.message?.includes('session')) return
-    logError(err, 'Handler')
+    logError(err, 'HandlerSubbot')
   }
 }
 
-export function initializeAntiCall(sock) {
-  if (!config?.antiCall) return
+export function initializeSubbotAntiCall(sock) {
+  const numero = sock.__numero
   sock.ev.on('call', async (calls) => {
-    for (const call of calls) {
-      if (call.status === 'offer') {
-        try {
-          await sock.rejectCall(call.id, call.from)
-          logEvent('Anti-call', `Llamada rechazada de ${call.from.split('@')[0]}`)
-        } catch {}
+    try {
+      const settings = await getSubbotSettingsWithCache(numero)
+      if (!settings?.antiCall) return
+      for (const call of calls) {
+        if (call.status === 'offer') {
+          try { await sock.rejectCall(call.id, call.from) } catch {}
+        }
       }
-    }
+    } catch {}
   })
-  logEvent('Anti-call', 'Protección activada')
 }
 
-export default { handleMessage, initializeAntiCall }
+export async function initializeSubbotWelcome(sock, subbotNumero) {
+  sock.ev.on('group-participants.update', async (update) => {
+    const { id, participants, action } = update
+    if (action !== 'add') return
+    
+    try {
+      const cfg = await getSubbotGroupConfigWithCache(subbotNumero, id)
+      
+      if (!cfg.welcomeMessage) return
+      
+      for (const p of participants) {
+        let participantId = typeof p === 'string' ? p : (p.id || p.jid || p)
+        const plantilla = cfg.welcomeText || '> 👋 Bienvenido @user al grupo'
+        const mensaje = plantilla.replace('@user', `@${participantId.split('@')[0]}`)
+        await sock.sendMessage(id, { text: mensaje, mentions: [participantId] })
+      }
+    } catch (err) {
+      console.error(`[SUBBOT ${subbotNumero}] Error en bienvenida:`, err.message)
+    }
+  })
+}
+
+export default { 
+  handleSubbotMessage, 
+  initializeSubbotAntiCall,
+  initializeSubbotWelcome
+}

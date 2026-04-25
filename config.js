@@ -7,7 +7,7 @@ export default {
   useQR: true,
   prefix: '*',
   sessionName: 'Midori-session',
-  autoRead: false,
+  autoRead: true,
   autoBio: true,
   antiCall: true,
   allowPrivate: true,
@@ -17,7 +17,7 @@ export default {
   
 //subbot
   subbot: true,
-  maxSubbots: 2,
+  maxSubbots: 1,
   
   // Configuración de Grupos Exclusivos
   nsfwGroupId: '120363427306410107@g.us', 
@@ -36,7 +36,7 @@ export default {
   maintenanceMessage: '🔧 Bot en mantenimiento, vuelve pronto',
   
   antiSpam: true,
-  spamLimit: 15,
+  spamLimit: 10,
   spamTime: 60000,
   spamMessage: '⏳ Espera un momento antes de usar otro comando',
   

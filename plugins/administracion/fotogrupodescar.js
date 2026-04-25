@@ -1,5 +1,5 @@
 export default {
-  command: ['fotogrupo', 'getfoto', 'groupfoto'],
+  command: ['fotogrupo'],
   group: true,
   owner: false,
 

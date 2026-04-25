@@ -130,39 +130,4 @@ export function isUserMuted(groupId, userId) {
   return cfg.mutedUsers?.[id] === true
 }
 
-// ─── DB POR SUBBOT ────────────────────────────────────────
-
-const subbotDbs = new Map()
-
-export async function getSubbotDb(numero) {
-  if (subbotDbs.has(numero)) return subbotDbs.get(numero)
-
-  const dir = path.join(__dirname, '..', 'db-subbot')
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-
-  const dbFile   = path.join(dir, `${numero}.json`)
-  const adapter  = new JSONFile(dbFile)
-  const subbotDb = new Low(adapter, { groups: {}, settings: {} })
-  await subbotDb.read()
-  if (!subbotDb.data)          subbotDb.data = { groups: {}, settings: {} }
-  if (!subbotDb.data.groups)   subbotDb.data.groups = {}
-  if (!subbotDb.data.settings) subbotDb.data.settings = {}
-  await subbotDb.write()
-
-  subbotDbs.set(numero, subbotDb)
-  return subbotDb
-}
-
-export async function getSubbotSettings(numero) {
-  const subbotDb = await getSubbotDb(numero)
-  return subbotDb.data.settings
-}
-
-export async function updateSubbotSettings(numero, updates) {
-  const subbotDb = await getSubbotDb(numero)
-  Object.assign(subbotDb.data.settings, updates)
-  await subbotDb.write()
-  return subbotDb.data.settings
-}
-
 export default db

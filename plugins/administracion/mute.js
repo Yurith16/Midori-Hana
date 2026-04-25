@@ -1,12 +1,13 @@
 import { getRealJid } from '../../utils/jid.js'
 import { setMute } from '../../database/db.js'
+import { setSubbotMute } from '../../database/db-subbot.js'
 
 export default {
   command: ['mute', 'silenciar'],
   group: true,
   owner: false,
 
-  async execute(sock, msg, { from, isOwner }) {
+  async execute(sock, msg, { from, isOwner, subbotNumero }) {
     const groupMetadata = await sock.groupMetadata(from)
     const groupAdmins = groupMetadata.participants.filter(p => p.admin).map(p => p.id)
     const sender = msg.key.participant || msg.key.remoteJid
@@ -33,7 +34,14 @@ export default {
       return
     }
 
-    setMute(from, targetJid, true)
+    const isSubbot = !!subbotNumero
+
+    if (isSubbot) {
+      await setSubbotMute(subbotNumero, from, targetJid, true)
+    } else {
+      setMute(from, targetJid, true)
+    }
+
     await sock.sendMessage(from, { react: { text: '🔇', key: msg.key } })
     await sock.sendMessage(from, { 
       text: `El usuario @${targetRaw.split('@')[0]} ha sido silenciado. Sus mensajes serán eliminados 🍃`,
