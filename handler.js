@@ -174,13 +174,18 @@ function extractText(msg) {
   )
 }
 
-function getPrefixes(cfg) {
+function getPrefixesFromSettings(cfg, subbotPrefijos) {
+  // Si el subbot tiene prefijos personalizados, usarlos
+  if (subbotPrefijos && Array.isArray(subbotPrefijos) && subbotPrefijos.length > 0) {
+    return subbotPrefijos
+  }
+  // Si no, usar los del config general
   const p = cfg?.prefix
   return Array.isArray(p) ? p : (p ? [p] : ['.'])
 }
 
-function getCommandText(text, cfg) {
-  for (const prefix of getPrefixes(cfg)) {
+function getCommandText(text, prefixes) {
+  for (const prefix of prefixes) {
     if (text.startsWith(prefix)) {
       return { matched: true, prefix, text: text.slice(prefix.length) }
     }
@@ -225,6 +230,9 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
     const effectiveCfg = (subbotSettings && Object.keys(subbotSettings).length > 0)
       ? { ...config, ...subbotSettings }
       : config
+
+    // Obtener prefijos personalizados del subbot si existen
+    const subbotPrefijos = subbotSettings?.prefijos || null
 
     const isGroup  = from.endsWith('@g.us')
     const sender   = msg.key.participant || from
@@ -285,7 +293,9 @@ async function _processMessage(sock, msg, store, from, subbotDb = null, subbotSe
       }
     }
 
-    const { matched, prefix, text: cmdText } = getCommandText(text, effectiveCfg)
+    // Usar prefijos personalizados del subbot
+    const prefixes = getPrefixesFromSettings(effectiveCfg, subbotPrefijos)
+    const { matched, prefix, text: cmdText } = getCommandText(text, prefixes)
 
     if (!text || !matched) {
       if (text) {

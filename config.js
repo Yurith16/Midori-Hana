@@ -5,7 +5,7 @@ export default {
   botNumber: '50432821762',
   
   useQR: true,
-  prefix: '*',
+  prefix: ['.'],
   sessionName: 'Midori-session',
   autoRead: true,
   autoBio: true,

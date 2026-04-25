@@ -17,7 +17,6 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname  = path.dirname(__filename)
 
 const activeSubs = new Map() // numero -> { sock, connectedAt }
-const reconnecting = new Set() // Evita múltiples reconexiones simultáneas
 
 export function getActiveSubs() {
   return activeSubs
@@ -70,7 +69,7 @@ export async function connectSubbot(numero, onCode, onConnect, onDisconnect) {
     setTimeout(async () => {
       try {
         const numeroLimpio = numero.replace(/\D/g, '')
-        console.log(`[SUBBOT ${numero}] Solicitando código...`)
+        console.log(`[SUBBOT ${numero}] Solicitando código para ${numeroLimpio}...`)
         
         const code = await sock.requestPairingCode(numeroLimpio)
         const formatted = code.match(/.{1,4}/g)?.join('-') || code
@@ -90,35 +89,22 @@ export async function connectSubbot(numero, onCode, onConnect, onDisconnect) {
     const { connection, lastDisconnect } = update
 
     if (connection === 'open') {
-      // Evitar reconexiones duplicadas
-      if (activeSubs.has(numero)) {
-        console.log(`[SUBBOT ${numero}] Ya conectado, ignorando...`)
-        return
-      }
-      
       activeSubs.set(numero, {
         sock: sock,
         connectedAt: Date.now()
       })
-      reconnecting.delete(numero)
-      console.log(`[SUBBOT ${numero}] ✅ Conectado`)
+      console.log(`[SUBBOT ${numero}] Conectado`)
       if (onConnect) onConnect(numero, sock)
     }
 
     if (connection === 'close') {
-      // Si ya estamos reconectando, ignorar
-      if (reconnecting.has(numero)) {
-        console.log(`[SUBBOT ${numero}] Ya reconectando, ignorando...`)
-        return
-      }
-      
       activeSubs.delete(numero)
 
       const code = lastDisconnect?.error?.output?.statusCode
       const fatal = [DisconnectReason.loggedOut, 401, 403, 405]
 
       if (fatal.includes(code)) {
-        console.log(`[SUBBOT ${numero}] ❌ Desconexión fatal (${code})`)
+        console.log(`[SUBBOT ${numero}] Desconexión fatal (${code})`)
         try {
           fs.rmSync(sessionDir, { recursive: true, force: true })
         } catch {}
@@ -128,25 +114,23 @@ export async function connectSubbot(numero, onCode, onConnect, onDisconnect) {
 
       const attempt = (sock.__retries || 0) + 1
       sock.__retries = attempt
-      const wait = Math.min(30000, 3000 * Math.pow(2, Math.min(attempt, 3))) // Máximo 30 segundos
+      const wait = Math.min(60000, 3000 * Math.pow(2, Math.min(attempt, 5)))
 
-      console.log(`[SUBBOT ${numero}] 🔄 Reconectando (intento ${attempt})...`)
-      reconnecting.add(numero)
+      console.log(`[SUBBOT ${numero}] Reconectando en ${wait}ms (intento ${attempt})`)
 
       setTimeout(() => {
-        reconnecting.delete(numero)
         connectSubbot(numero, null, onConnect, onDisconnect)
       }, wait)
     }
   })
 
-  // Usar el nuevo handler para subbots
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
 
     try {
-      const { handleSubbotMessage } = await import('./handler-subbot.js')
-      
+      const { handleMessage } = await import('./handler.js')
+      const subbotDb = await getSubbotDb(numero)
+
       for (const msg of messages) {
         if (!msg.message || !msg.key?.id) continue
 
@@ -157,7 +141,8 @@ export async function connectSubbot(numero, onCode, onConnect, onDisconnect) {
         const msgTime = msg.messageTimestamp || 0
         if (now - msgTime > 10) continue
 
-        await handleSubbotMessage(sock, msg, { loadMessage: async () => null })
+        handleMessage(sock, msg, { loadMessage: async () => null }, subbotDb)
+          .catch(() => {})
       }
     } catch (e) {
       console.error(`[SUBBOT ${numero}] Error mensajes:`, e.message)
@@ -173,7 +158,6 @@ export async function disconnectSubbot(numero) {
     try { data.sock.ev.removeAllListeners() } catch {}
     try { await data.sock.logout() } catch {}
     activeSubs.delete(numero)
-    reconnecting.delete(numero)
     console.log(`[SUBBOT ${numero}] Desconectado manualmente`)
   }
 }
@@ -199,6 +183,7 @@ export async function reconnectSavedSessions(onConnect, onDisconnect) {
     try {
       const size = fs.statSync(credsPath).size
       if (size > 500) {
+        console.log(`[SUBBOT] Reconectando sesión: ${numero}`)
         await connectSubbot(numero, null, onConnect, onDisconnect)
       }
     } catch {}
