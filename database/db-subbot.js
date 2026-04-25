@@ -112,7 +112,8 @@ const defaultSettings = {
   autoBio:      true,
   antiCall:     true,
   antiSpam:     true,
-  allowPrivate: true
+  allowPrivate: true,
+  menuImage:    null 
 }
 
 export async function getSubbotSettings(numero) {

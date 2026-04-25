@@ -1,7 +1,7 @@
 export default {
   botName: '𝑴𝒊𝒅𝒐𝒓𝒊-𝑯𝒂𝒏𝒂',
   ownerName: 'Hernandez',
-  ownerNumbers: ['5049692615'],
+  ownerNumbers: ['50496926150'],
   botNumber: '50432821762',
   
   useQR: true,

@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const pluginsDir = path.join(__dirname, '../..', 'plugins')
 
-const MENU_IMAGES = [
+const DEFAULT_MENU_IMAGES = [
   'https://www.image2url.com/r2/default/images/1776639876334-87e327fb-c225-42d5-bf68-a594f976fb49.jpg'
 ]
 
@@ -82,6 +82,7 @@ export default {
 
       let subbotPrefijos = null
       let subbotPrefixDisplay = null
+      let menuImage = null
       
       if (isSubbot && subbotNumero) {
         try {
@@ -90,12 +91,18 @@ export default {
           if (subbotPrefijos && Array.isArray(subbotPrefijos) && subbotPrefijos.length > 0) {
             subbotPrefixDisplay = subbotPrefijos[0]
           }
+          if (settings.menuImage) {
+            menuImage = settings.menuImage
+          }
         } catch (err) {
           console.error('Error obteniendo settings del subbot:', err)
         }
       }
 
       let prefixDisplay = subbotPrefixDisplay || cfg?.prefix || global.config?.prefix || '.'
+
+      // Si no hay imagen personalizada, usar una aleatoria por defecto
+      const finalImage = menuImage || DEFAULT_MENU_IMAGES[Math.floor(Math.random() * DEFAULT_MENU_IMAGES.length)]
 
       await sock.sendMessage(from, { react: { text: '🌸', key: msg.key } })
 
@@ -201,8 +208,7 @@ export default {
 
       menuTxt += `> *${toMono(botName)}*`
 
-      const randomImg = MENU_IMAGES[Math.floor(Math.random() * MENU_IMAGES.length)]
-      await sock.sendMessage(from, { image: { url: randomImg }, caption: menuTxt }, { quoted: msg })
+      await sock.sendMessage(from, { image: { url: finalImage }, caption: menuTxt }, { quoted: msg })
 
     } catch (err) {
       console.error(err)
