@@ -1,5 +1,20 @@
 import ytSearch from 'yt-search'
 
+const API_KEY = 'lem_c92ba8f5ed716cd9d1ba968623728690dc706dcb'
+
+async function fetchConReintentos(url, opciones = {}, intentos = 3) {
+  for (let i = 1; i <= intentos; i++) {
+    try {
+      const res = await fetch(url, opciones)
+      if (res.ok) return res
+    } catch (e) {
+      // silencio, reintenta
+    }
+    if (i < intentos) await new Promise(r => setTimeout(r, 1500 * i))
+  }
+  return null
+}
+
 export default {
   command:     ['play'],
   tag:         'play',
@@ -39,12 +54,10 @@ export default {
     }
 
     try {
-      const apiKey = 'lem_c92ba8f5ed716cd9d1ba968623728690dc706dcb'
-      const api = `https://api.lempi.lat/dl/yta?url=${encodeURIComponent(videoUrl)}&apikey=${apiKey}`
+      const api = `https://api.lempi.lat/dl/yta?url=${encodeURIComponent(videoUrl)}&apikey=${API_KEY}`
 
-      const res = await fetch(api, { headers: { 'content-type': 'application/json' } })
-
-      if (!res.ok) {
+      const res = await fetchConReintentos(api, { headers: { 'content-type': 'application/json' } })
+      if (!res) {
         await sock.sendMessage(from, { text: 'la api no respondió bien... inténtalo luego.' }, { quoted: msg })
         return
       }
@@ -58,14 +71,14 @@ export default {
 
       await sock.sendMessage(from, { text: 'estoy descargando su audio, tenga paciencia.' }, { quoted: msg })
 
-      const dl = await fetch(data.datos.url, {
+      const dl = await fetchConReintentos(data.datos.url, {
         headers: {
           'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
         },
         redirect: 'follow',
       })
 
-      if (!dl.ok) {
+      if (!dl) {
         await sock.sendMessage(from, { text: 'falló la descarga... no es mi culpa, ¿eh?' }, { quoted: msg })
         return
       }
