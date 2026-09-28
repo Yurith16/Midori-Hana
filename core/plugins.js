@@ -3,6 +3,7 @@ import path from 'path'
 import { logger } from '../utils/helpers.js'
 
 export const commands = new Map()
+export const messageListeners = []
 
 async function scan(dir, hot = false) {
   if (!fs.existsSync(dir)) return
@@ -22,6 +23,7 @@ async function scan(dir, hot = false) {
         if (!cmd?.command) continue
         const names = Array.isArray(cmd.command) ? cmd.command : [cmd.command]
         names.forEach(n => commands.set(n, cmd))
+        if (cmd.onMessage) messageListeners.push(cmd)
       }
     } catch (err) {
       logger.error('Plugin', `${file.name} — ${err.message}`)
@@ -31,6 +33,7 @@ async function scan(dir, hot = false) {
 
 export async function loadPlugins(hot = false) {
   commands.clear()
+  messageListeners.length = 0
   await scan(path.resolve('plugins'), hot)
   if (!hot) {
     logger.info('Plugins', `${commands.size} comandos cargados`)

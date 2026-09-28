@@ -5,7 +5,7 @@ import sharp from 'sharp'
 export default {
   command:     ['ytsearch', 'yts', 'youtube', 'buscar'],
   tag:         'ytsearch',
-  categoria:   'media',
+  categoria: 'descargas',
   owner:       false,
   group:       false,
   descripcion: 'Busca videos en YouTube',

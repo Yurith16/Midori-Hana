@@ -15,7 +15,7 @@ const AUDIO_TYPES = ['audioMessage', 'videoMessage', 'documentMessage']
 export default {
   command: ['toaudio', 'tomp3'],
   tag: 'tomp3',
-  categoria: 'utilidades',
+  categoria: 'utilidad',
   owner: false,
   group: false,
   nsfw: false,

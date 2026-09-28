@@ -33,3 +33,15 @@ export function cleanNumber(jid) {
   if (!jid) return ''
   return String(jid).replace(/@.*$/, '').replace(/\D/g, '')
 }
+
+// ─── Resolución rápida desde caché — sin red, para eventos que solo necesitan
+//     mostrar un número (quién promovió/degradó, quién cambió el nombre, etc.) ──
+
+export function resolveNum(pid, lidCache) {
+  if (pid.endsWith('@s.whatsapp.net')) return cleanNumber(pid)
+  if (pid.endsWith('@lid')) {
+    const cached = lidCache?.get(pid) || global.lidCache?.get(pid)
+    if (cached) return cleanNumber(cached)
+  }
+  return cleanNumber(pid)
+}

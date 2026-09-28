@@ -7,7 +7,7 @@ export default {
   categoria:   'admin',
   owner:       false,
   group:       true,
-  descripcion: 'Ignora a un usuario en este grupo',
+  descripcion: 'Ignoraré a un usuario en este grupo',
 
   async execute(sock, msg, { from, args, isAdmin, isOwner }) {
     await sock.sendMessage(from, { react: { text: global.getRandomReaction('admin'), key: msg.key } })

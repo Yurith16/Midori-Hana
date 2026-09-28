@@ -2,12 +2,10 @@ const features = {
   "antiLink": false,
   "antiCall": true,
   "antiSpam": true,
-  "autoRead": false,
+  "autoRead": true,
   "autoBio": false,
-  "maintenance": false,
+  "maintenance": true,
   "allowPrivate": true,
-  "welcomeMsg": true,
-  "goodbyeMsg": true,
   "nsfw": false,
   "adminMode": false
 }

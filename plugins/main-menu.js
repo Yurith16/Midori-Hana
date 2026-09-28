@@ -29,11 +29,38 @@ function getTime() {
   })
 }
 
-function buildCategoryBox(catName, cmds, descMap, prefix) {
-  const emojis = ['📍', '🌸', '🌼', '🌴', '🌱', '🙊']
-  const emoji = emojis[Math.floor(Math.random() * emojis.length)]
-  
-  let txt = `✥------- ${toMono(catName.toUpperCase())} -------✥\n\n`
+// ─── Emoji fijo por categoría — nunca al azar, siempre reconocible ───────────
+
+const CATEGORY_EMOJI = {
+  main:      '🌱',
+  admin:     '🌿',
+  descargas: '🍃',
+  utilidad:  '🌼',
+  owner:     '🌷',
+}
+
+// ─── Imagen del menú cacheada — solo se descarga una vez por proceso ────────
+
+let cachedMenuImg = null
+
+async function getMenuImage() {
+  if (cachedMenuImg) return cachedMenuImg
+  try {
+    const controller = new AbortController()
+    const timer       = setTimeout(() => controller.abort(), 15000)
+    const res          = await fetch(bot.defaultImg, { signal: controller.signal })
+    clearTimeout(timer)
+    cachedMenuImg = Buffer.from(await res.arrayBuffer())
+  } catch {
+    cachedMenuImg = null
+  }
+  return cachedMenuImg
+}
+
+function buildCategoryBox(catName, catKey, cmds, descMap, prefix) {
+  const emoji = CATEGORY_EMOJI[catKey] || '📍'
+
+  let txt = `〔 ${emoji} *${toMono(catName.toUpperCase())}* 〕\n\n`
   cmds.sort().forEach(cmd => {
     txt += `${emoji} *${prefix}${cmd}*\n`
     const desc = descMap[cmd]
@@ -90,40 +117,39 @@ export default {
         console.error('Error al obtener el conteo de usuarios:', e)
       }
 
-      const fecha = getDate()
-      const hora  = getTime()
+      const fecha    = getDate()
+      const hora     = getTime()
+      const ownerNum = bot.ownerNumber?.[0] || ''
+      const botNum   = bot.botNumber || ''
+      const mentions = [ownerNum, botNum].filter(Boolean).map(n => `${n}@s.whatsapp.net`)
 
       let menuTxt = `╭─〔 🌸 *${toMono(botName.toUpperCase())}* 🌸 〕─╮\n\n`
-      menuTxt += `> ✦ *Fecha:* ${fecha}\n`
-      menuTxt += `> ✦ *Hora:* ${hora} · Honduras\n`
+
+      menuTxt += `> _Identidad_\n`
       menuTxt += `> ✦ *Dueño:* ${bot.owner || 'Hernandez'}\n`
-      menuTxt += `> ✦ *Contacto:* +${bot.ownerNumber?.[0] || ''}\n`
-      menuTxt += `> ✦ *Bot Principal:* +${bot.botNumber || ''}\n`
+      if (ownerNum) menuTxt += `> ✦ *Contacto:* @${ownerNum}\n`
+      if (botNum)   menuTxt += `> ✦ *Bot Principal:* @${botNum}\n`
       menuTxt += `> ✦ *Versión:* ${bot.version || '1.0.0'}\n`
       menuTxt += `> ✦ *Prefijo:* ${prefix}\n`
+      if (bot.grupoOficial) menuTxt += `> ✦ *Grupo Oficial:* ${bot.grupoOficial}\n`
+
+      menuTxt += `\n> _Estado actual_\n`
+      menuTxt += `> ✦ *Fecha:* ${fecha}\n`
+      menuTxt += `> ✦ *Hora:* ${hora} · Honduras\n`
       menuTxt += `> ✦ *Activo:* ${uptime()}\n`
       menuTxt += `> ✦ *Grupos:* ${grupos}\n`
       menuTxt += `> ✦ *Latencia:* ${latency}ms\n`
       menuTxt += `> ✦ *Usuarios:* ${totalUsuarios}\n`
       menuTxt += `> ✦ *Comandos:* ${total}\n`
 
-      if (bot.grupoOficial) {
-        menuTxt += `> ✦ *Grupo Oficial:* ${bot.grupoOficial}\n`
-      }
-
       menuTxt += `\n_Hazme trabajar duro hoy, que para eso estoy aquí..._ 🤭\n\n`
 
-      const orden = ['main', 'admin', 'economia', 'diversion', 'juego', 'busqueda', 'descargas', 'utilidad', 'nsfw', 'owner']
+      const orden = ['main', 'admin', 'descargas', 'utilidad', 'owner']
       const categoryMap = {
         main:      'PRINCIPAL',
         admin:     'ADMINISTRACIÓN',
-        economia:  'ECONOMÍA',
-        diversion: 'DIVERSIÓN',
-        juego:     'JUEGOS',
-        busqueda:  'BÚSQUEDAS',
         descargas: 'DESCARGAS',
         utilidad:  'HERRAMIENTAS',
-        nsfw:      'CONTENIDO +18',
         owner:     'OWNER'
       }
 
@@ -131,19 +157,26 @@ export default {
         const cmds = mapa[cat]
         if (!cmds?.length) continue
         const nombre = categoryMap[cat] || cat.toUpperCase()
-        menuTxt += buildCategoryBox(nombre, cmds, descMap, prefix)
+        menuTxt += buildCategoryBox(nombre, cat, cmds, descMap, prefix)
         menuTxt += '\n'
       }
 
-      menuTxt += `_🌸 ¿Te vas a quedar un rato más conmigo o solo viniste por mis funciones? No me dejes en visto..._`
+      menuTxt += `🌸 ¿Te vas a quedar un rato más conmigo o solo viniste por mis funciones? No me dejes en visto...`
+
+      const imgBuffer = await getMenuImage()
 
       try {
-        await sock.sendMessage(from, {
-          image: { url: bot.defaultImg },
-          caption: menuTxt
-        }, { quoted: msg })
+        if (imgBuffer) {
+          await sock.sendMessage(from, {
+            image: imgBuffer,
+            caption: menuTxt,
+            mentions
+          }, { quoted: msg })
+        } else {
+          await sock.sendMessage(from, { text: menuTxt, mentions }, { quoted: msg })
+        }
       } catch {
-        await sock.sendMessage(from, { text: menuTxt }, { quoted: msg })
+        await sock.sendMessage(from, { text: menuTxt, mentions }, { quoted: msg })
       }
 
     } catch (err) {

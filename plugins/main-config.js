@@ -15,11 +15,9 @@ const OWNER_FEATURES = {
 }
 
 const GROUP_FEATURES = {
-  welcome:   { key: 'welcomeMsg', label: 'Bienvenidas y despedidas', extra: 'goodbyeMsg' },
   antilink:  { key: 'antiLink',   label: 'Anti enlaces' },
   antitoxic: { key: 'antiToxic',  label: 'Anti insultos' },
   modoadmin: { key: 'adminMode',  label: 'Solo admins' },
-  economia:  { key: 'economia',   label: 'Economía' },
   detect:    { key: 'detect',     label: 'Detectar cambios del grupo' },
   saludos:   { key: 'saludos',    label: 'Saludos automáticos por horario' },
 }
@@ -36,6 +34,57 @@ function on(val) {
   return val ? '🟢 *on*' : '⚪ *off*'
 }
 
+// ─── Respuestas rotativas — función inválida ─────────────────────────────────
+
+const RESPUESTAS_INVALIDAS = [
+  (feature, cmd) => `*${feature}* no existe en mi lista, ¿lo inventaste o solo se te fue el dedo? Escribe .${cmd} sin argumentos para ver la lista.`,
+  (feature, cmd) => `Esa función no la conozco. Escribe .${cmd} sola y te muestro las que sí existen.`,
+  (feature, cmd) => `*${feature}*... no, esa no está en mi menú. Revisa bien y vuelve a intentar.`,
+  (feature, cmd) => `No tengo ninguna función llamada así. .${cmd} sin nada te enseña las que sí puedo tocar.`,
+  (feature, cmd) => `¿*${feature}*? No, esa me la acabas de inventar. Mira la lista con .${cmd} a secas.`,
+]
+
+let colaInvalidas = []
+
+function siguienteInvalida(feature, cmd) {
+  if (colaInvalidas.length === 0) {
+    colaInvalidas = RESPUESTAS_INVALIDAS.map((_, i) => i)
+    for (let i = colaInvalidas.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[colaInvalidas[i], colaInvalidas[j]] = [colaInvalidas[j], colaInvalidas[i]]
+    }
+  }
+  const idx = colaInvalidas.pop()
+  return RESPUESTAS_INVALIDAS[idx](feature, cmd)
+}
+
+function renderEstado(f, cfg, isOwner, isGroup, ownerLabel, groupLabel) {
+  let txt = ''
+
+  if (isOwner) {
+    txt += `> │ ${toBold(ownerLabel)}\n`
+    txt += `> │ ✦ anticall      ${on(f.antiCall)}\n`
+    txt += `> │ ✦ autoread      ${on(f.autoRead)}\n`
+    txt += `> │ ✦ autobio       ${on(f.autoBio)}\n`
+    txt += `> │ ✦ antispam      ${on(f.antiSpam)}\n`
+    txt += `> │ ✦ antiprivado   ${on(!f.allowPrivate)}\n`
+    txt += `> │ ✦ mantenimiento ${on(f.maintenance)}\n`
+    txt += `> │\n`
+  }
+
+  if (isGroup && cfg) {
+    txt += `> │ ${toBold(groupLabel)}\n`
+    txt += `> │ ✦ antilink   ${on(cfg.antiLink === 1)}\n`
+    txt += `> │ ✦ antitoxic  ${on(cfg.antiToxic !== 0)}\n`
+    txt += `> │ ✦ modoadmin  ${on(cfg.adminMode === 1)}\n`
+    txt += `> │ ✦ detect     ${on(cfg.detect === 1)}\n`
+    txt += `> │ ✦ saludos    ${on(cfg.saludos === 1)}\n`
+    txt += `> │\n`
+  }
+
+  return txt
+}
+
 // ─── Lógica compartida enable/disable ────────────────────────────────────────
 
 async function toggleFeature(activar, sock, msg, { from, args, isOwner, isAdmin, isGroup }) {
@@ -47,31 +96,8 @@ async function toggleFeature(activar, sock, msg, { from, args, isOwner, isAdmin,
 
     let txt = `> ╭─〔 🌸 *${activar ? 'ENABLE' : 'DISABLE'}* 〕\n`
     txt += `> │\n`
-
-    if (isOwner) {
-      txt += `> │ ${toBold('Globales — owner')}\n`
-      txt += `> │ ✦ anticall      ${on(f.antiCall)}\n`
-      txt += `> │ ✦ autoread      ${on(f.autoRead)}\n`
-      txt += `> │ ✦ autobio       ${on(f.autoBio)}\n`
-      txt += `> │ ✦ antispam      ${on(f.antiSpam)}\n`
-      txt += `> │ ✦ antiprivado   ${on(!f.allowPrivate)}\n`
-      txt += `> │ ✦ mantenimiento ${on(f.maintenance)}\n`
-      txt += `> │\n`
-    }
-
-    if (isGroup && cfg) {
-      txt += `> │ ${toBold('Este grupo — admin o owner')}\n`
-      txt += `> │ ✦ welcome    ${on(cfg.welcomeMsg === 1)}\n`
-      txt += `> │ ✦ antilink   ${on(cfg.antiLink === 1)}\n`
-      txt += `> │ ✦ antitoxic  ${on(cfg.antiToxic !== 0)}\n`
-      txt += `> │ ✦ modoadmin  ${on(cfg.adminMode === 1)}\n`
-      txt += `> │ ✦ economia   ${on(cfg.economia !== 0)}\n`
-      txt += `> │ ✦ detect     ${on(cfg.detect === 1)}\n`
-      txt += `> │ ✦ saludos    ${on(cfg.saludos === 1)}\n`
-      txt += `> │\n`
-    }
-
-    txt += `> │ _Uso: .${activar ? 'enable' : 'disable'} <feature>_\n`
+    txt += renderEstado(f, cfg, isOwner, isGroup, 'Globales — owner', 'Este grupo — admin o owner')
+    txt += `> │ _Uso: .${activar ? 'enable' : 'disable'} opcion_\n`
     txt += `> ╰─── ${toBold(global.bot?.name || 'Bot')} ✦`
 
     await sock.sendMessage(from, { text: txt }, { quoted: msg })
@@ -123,7 +149,7 @@ async function toggleFeature(activar, sock, msg, { from, args, isOwner, isAdmin,
   }
 
   await sock.sendMessage(from, {
-    text: `⚠️ *${feature}* no es una feature válida.\n_Escribe .${activar ? 'enable' : 'disable'} sin argumentos para ver la lista._`
+    text: siguienteInvalida(feature, activar ? 'enable' : 'disable')
   }, { quoted: msg })
 }
 
@@ -177,40 +203,10 @@ const config = {
 
     let txt = `> ╭─〔 🌸 *CONFIGURACIÓN* 〕\n`
     txt += `> │\n`
-
-    if (isOwner) {
-      txt += `> │ ${toBold('Globales')}\n`
-      txt += `> │ ✦ anticall      ${on(f.antiCall)}\n`
-      txt += `> │ ✦ autoread      ${on(f.autoRead)}\n`
-      txt += `> │ ✦ autobio       ${on(f.autoBio)}\n`
-      txt += `> │ ✦ antispam      ${on(f.antiSpam)}\n`
-      txt += `> │ ✦ antiprivado   ${on(!f.allowPrivate)}\n`
-      txt += `> │ ✦ mantenimiento ${on(f.maintenance)}\n`
-      txt += `> │\n`
-    }
-
-    if (isGroup && cfg) {
-      txt += `> │ ${toBold('Este grupo')}\n`
-      txt += `> │ ✦ welcome    ${on(cfg.welcomeMsg === 1)}\n`
-      txt += `> │ ✦ antilink   ${on(cfg.antiLink === 1)}\n`
-      txt += `> │ ✦ antitoxic  ${on(cfg.antiToxic !== 0)}\n`
-      txt += `> │ ✦ modoadmin  ${on(cfg.adminMode === 1)}\n`
-      txt += `> │ ✦ economia   ${on(cfg.economia !== 0)}\n`
-      txt += `> │ ✦ detect     ${on(cfg.detect === 1)}\n`
-      txt += `> │ ✦ saludos    ${on(cfg.saludos === 1)}\n`
-      txt += `> │\n`
-    }
-
+    txt += renderEstado(f, cfg, isOwner, isGroup, 'Globales', 'Este grupo')
     txt += `> ╰─── ${toBold(global.bot?.name || 'Bot')} ✦`
 
-    try {
-      await sock.sendMessage(from, {
-        image: { url: 'https://www.image2url.com/r2/default/images/1778698406704-04d69250-b32f-4f74-8514-8fbc6ac62bfc.png' },
-        caption: txt
-      }, { quoted: msg })
-    } catch {
-      await sock.sendMessage(from, { text: txt }, { quoted: msg })
-    }
+    await sock.sendMessage(from, { text: txt }, { quoted: msg })
   }
 }
 

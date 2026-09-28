@@ -15,10 +15,8 @@ const bot = {
   "stickerPack": "",
   "spamLimit": 8,
   "spamTime": 60000,
-  "minDelay": 800,
-  "maxDelay": 2500,
-  "welcomeText": " _Bienvenido al grupo @user espero que disfrutes tu estancia._",
-  "goodbyeText": " _Ups!! @user ha salido del grupo._"
+  "minDelay": 0,
+  "maxDelay": 0
 }
 
 global.bot = bot

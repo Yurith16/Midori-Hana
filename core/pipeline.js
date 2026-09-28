@@ -1,35 +1,29 @@
 import { getRealJid, cleanNumber } from '../utils/jid.js'
 import { logger, delay }           from '../utils/helpers.js'
 import { checkSpam }               from '../utils/spam.js'
-import { commands }                from './plugins.js'
+import { commands, messageListeners } from './plugins.js'
 import {
   getGroup, isMuted, isBanned, muteUser, unmuteUser,
-  trackActivity, updateGroupName, saveMsg, isIgnored,
-  isRegistered, registerUser, countUsers
+  trackActivity, updateGroupName, saveMsg, isIgnored
 } from './sqlite.js'
 import { isToxic, getToxicResponse, addWarning, clearWarnings } from '../utils/toxic.js'
-import { verificarSubida } from './levelup.js'
 
 const LINK_RE = /(?:https?:\/\/)?(?:www\.)?(?:chat\.whatsapp\.com|wa\.me|t\.me|telegram\.(?:me|dog|org))\/\S+/i
 
 if (!global.lidCache) global.lidCache = new Map()
 
-// ─── Registro automático — completamente silencioso, sin tocar Baileys ──────
+// ─── Caché de metadata de grupo — evita pedirle a Baileys la lista de admins
+//     en cada mensaje; se refresca sola cada 5 minutos por grupo ────────────
 
-function autoRegistrar(msg, userNum) {
-  try {
-    const pushName      = msg.pushName?.trim() || ''
-    const tienePushName = pushName.length > 0
-    const nombre        = tienePushName
-      ? pushName.slice(0, 30)
-      : `Alma Errante-${countUsers() + 1}`
+const groupMetaCache = new Map()
+const GROUP_META_TTL = 5 * 60 * 1000
 
-    registerUser(userNum, { nombre, apodo: '', edad: 0, genero: '', pais: '' })
-
-    logger.info('AutoRegistro', `${userNum} → ${nombre}`)
-  } catch (err) {
-    logger.error('AutoRegistro', err.message)
-  }
+async function getCachedGroupMetadata(sock, groupId) {
+  const cached = groupMetaCache.get(groupId)
+  if (cached && Date.now() - cached.ts < GROUP_META_TTL) return cached.meta
+  const meta = await sock.groupMetadata(groupId)
+  groupMetaCache.set(groupId, { meta, ts: Date.now() })
+  return meta
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -83,7 +77,7 @@ async function resolveContext(sock, msg) {
   let isAdmin = false
   if (isGroup) {
     try {
-      const meta      = await sock.groupMetadata(from)
+      const meta      = await getCachedGroupMetadata(sock, from)
       const senderRaw = cleanNumber(sender)
       isAdmin = meta.participants.some(p =>
         p.admin && (
@@ -92,7 +86,9 @@ async function resolveContext(sock, msg) {
           cleanNumber(p.id) === senderRaw
         )
       )
-      if (meta.subject) updateGroupName(from, meta.subject)
+      if (meta.subject && meta.subject !== groupCfg?.name) {
+        updateGroupName(from, meta.subject)
+      }
     } catch {}
   }
 
@@ -190,7 +186,7 @@ async function stepGuards(ctx, sock, msg) {
   }
 
   if (feat.antiSpam && !ctx.isOwner) {
-    const { blocked, secsLeft } = checkSpam(ctx.sender)
+    const { blocked, secsLeft } = checkSpam(ctx.userNum || ctx.sender)
     if (blocked) {
       await sock.sendMessage(ctx.from, {
         text: (msgs.spamWarn || 'Espera {secs}s').replace('{secs}', secsLeft)
@@ -207,9 +203,8 @@ async function stepGuards(ctx, sock, msg) {
 async function dispatch(ctx, sock, msg, match) {
   const textStr = extractText(msg) || ''
 
-  for (const cmd of commands.values()) {
-    if (cmd.onMessage) {
-      await cmd.onMessage(sock, msg, {
+  for (const cmd of messageListeners) {
+    await cmd.onMessage(sock, msg, {
         from:     ctx.from,
         text:     textStr,
         sender:   ctx.sender,
@@ -218,8 +213,7 @@ async function dispatch(ctx, sock, msg, match) {
         isOwner:  ctx.isOwner,
         isAdmin:  ctx.isAdmin,
         groupCfg: ctx.groupCfg
-      }).catch(() => {})
-    }
+    }).catch(() => {})
   }
 
   if (!match) return
@@ -236,10 +230,6 @@ async function dispatch(ctx, sock, msg, match) {
     await sock.sendMessage(ctx.from, { text: global.messages?.groupOnly }, { quoted: msg })
     return
   }
-  if (cmd.categoria === 'economia' && ctx.isGroup && ctx.groupCfg?.economia === 0) {
-    await sock.sendMessage(ctx.from, { text: global.messages?.ecoDisabled }, { quoted: msg })
-    return
-  }
   if (ctx.isGroup && !ctx.isOwner && !ctx.isAdmin && isIgnored(ctx.from, ctx.userNum)) return
 
   logger.cmd(cmdName, ctx.userNum, ctx.isGroup ? ctx.groupCfg?.name : null)
@@ -249,11 +239,6 @@ async function dispatch(ctx, sock, msg, match) {
     logger.error('Cmd', `${cmdName} — ${err.message}`)
     sock.sendMessage(ctx.from, { text: global.messages?.error }, { quoted: msg }).catch(() => {})
   })
-
-  // ─── Verificar subida de nivel/rango después de comando de economía ────────
-  if (cmd.categoria === 'economia' && ctx.userNum) {
-    verificarSubida(sock, ctx.from, ctx.userNum).catch(() => {})
-  }
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -273,13 +258,6 @@ export async function handleMessage(sock, msg) {
 
     const textStr = extractText(msg) || ''
     const match   = matchPrefix(textStr, ctx.groupCfg)
-
-    // ─── Registro automático — solo cuando usa un comando, sin tocar Baileys ──
-    if (match && !ctx.fromMe && ctx.userNum && ctx.userNum.length >= 8) {
-      if (!isRegistered(ctx.userNum)) {
-        autoRegistrar(msg, ctx.userNum)
-      }
-    }
 
     if (match && await stepGuards(ctx, sock, msg)) return
 

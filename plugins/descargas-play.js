@@ -1,144 +1,88 @@
 import ytSearch from 'yt-search'
-import axios from 'axios'
-import sharp from 'sharp'
-import { downloadAudio } from '../utils/audio.js'
-
-const descargando = new Set()
-const descargaTimeouts = new Map()
 
 export default {
-  command: ['play','ytmp3'],
-  tag: 'play',
-  categoria: 'descargas',
-  owner: false,
-  group: false,
-  nsfw: false,
-  descripcion: 'Descarga audio de YouTube',
+  command:     ['play'],
+  tag:         'play',
+  categoria:   'descargas',
+  owner:       false,
+  group:       false,
+  descripcion: 'Descarga el audio de YouTube (nombre o URL)',
 
   async execute(sock, msg, { from, args }) {
+    await sock.sendMessage(from, { react: { text: global.getRandomReaction('media'), key: msg.key } })
+
     if (!args.length) {
-      return sock.sendMessage(from, {
-        text: '¿Y se supone que tengo que adivinar qué canción quieres o qué? Pásame el nombre o el enlace y dejo de hacerte esperar.'
-      }, { quoted: msg })
+      await sock.sendMessage(from, { text: 'debes ingresar el nombre o la URL del video.' }, { quoted: msg })
+      return
     }
 
-    const userId = msg.key.participant || msg.key.remoteJid
+    const input = args.join(' ').trim()
+    const ytRegex = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+    const match = input.match(ytRegex)
 
-    if (descargando.has(userId)) {
-      return sock.sendMessage(from, {
-        text: 'Todavía estoy con tu descarga anterior, no me hagas trabajar el doble. Espera un momento.'
-      }, { quoted: msg })
-    }
-
-    const query = args.join(' ')
-    const isUrl = /^https?:\/\//.test(query)
-
-    descargando.add(userId)
-
-    const timeout = setTimeout(() => {
-      descargando.delete(userId)
-    }, 600000)
-    descargaTimeouts.set(userId, timeout)
+    let videoUrl
 
     try {
-      await sock.sendMessage(from, { react: { text: '🔎', key: msg.key } })
-
-      let videoUrl, title, thumbnail, duration, views, author, ago
-
-      if (isUrl) {
-        videoUrl = query
-        if (!videoUrl.includes('youtu.be') && !videoUrl.includes('youtube.com')) {
-          await sock.sendMessage(from, {
-            text: 'Eso no es un enlace de YouTube. No me hagas perder el tiempo, pásame algo que sirva.'
-          }, { quoted: msg })
-          return
-        }
+      if (match) {
+        videoUrl = `https://youtu.be/${match[1]}`
       } else {
-        const search = await ytSearch(query)
+        const search = await ytSearch(input)
         if (!search.videos?.length) {
-          await sock.sendMessage(from, {
-            text: 'Busqué por todos lados y no encontré nada con eso. Intenta con otras palabras a ver si hay suerte.'
-          }, { quoted: msg })
+          await sock.sendMessage(from, { text: 'no encontré nada con ese nombre... no es que me haya esforzado mucho, ¿eh?' }, { quoted: msg })
           return
         }
-        const video = search.videos[0]
+        videoUrl = search.videos[0].url.split('&')[0]
+      }
+    } catch {
+      await sock.sendMessage(from, { text: global.messages.error }, { quoted: msg })
+      return
+    }
 
-        const durSecs = video.duration?.seconds || 0
-        if (durSecs > 18000) {
-          await sock.sendMessage(from, {
-            text: 'Ese audio dura más de 5 horas. Ni yo que soy un bot me atrevo a descargar algo tan largo, busca algo más razonable.'
-          }, { quoted: msg })
-          return
-        }
+    try {
+      const apiKey = 'lem_c92ba8f5ed716cd9d1ba968623728690dc706dcb'
+      const api = `https://api.lempi.lat/dl/yta?url=${encodeURIComponent(videoUrl)}&apikey=${apiKey}`
 
-        videoUrl = video.url
-        title = video.title
-        thumbnail = video.thumbnail
-        duration = video.duration?.timestamp || video.duration
-        views = video.views
-        author = video.author?.name || video.author
-        ago = video.ago
+      const res = await fetch(api, { headers: { 'content-type': 'application/json' } })
+
+      if (!res.ok) {
+        await sock.sendMessage(from, { text: 'la api no respondió bien... inténtalo luego.' }, { quoted: msg })
+        return
       }
 
-      if (thumbnail) {
-        const midoriEmojis = ['🌴', '🌱', '🌾', '🐛', '🐝']
-        const emo = midoriEmojis[Math.floor(Math.random() * midoriEmojis.length)]
+      const data = await res.json()
 
-        const videoDetails = `> *${title || 'Audio'}*\n\n` +
-          `> ${emo} *Canal:* ${author || 'YouTube'}\n` +
-          `> ${emo} *Duración:* ${duration || '--'}\n` +
-          `> ${emo} *Vistas:* ${views ? Number(views).toLocaleString() : '--'}\n` +
-          `> ${emo} *Publicado:* ${ago || 'Desconocido'}\n` +
-          `> ${emo} *Enlace:* ${videoUrl.split('&')[0]}`
-
-        try {
-          const thumbRes = await axios.get(thumbnail, { responseType: 'arraybuffer' })
-          const thumbBuffer = await sharp(Buffer.from(thumbRes.data))
-            .resize(480, 360)
-            .jpeg({ quality: 80 })
-            .toBuffer()
-
-          await sock.sendMessage(from, {
-            image: thumbBuffer,
-            caption: videoDetails.trim()
-          }, { quoted: msg })
-        } catch {
-          await sock.sendMessage(from, { text: videoDetails.trim() }, { quoted: msg })
-        }
+      if (!data.status || !data.datos?.url) {
+        await sock.sendMessage(from, { text: 'no pude obtener el audio... qué fastidio.' }, { quoted: msg })
+        return
       }
 
-      await sock.sendMessage(from, { react: { text: '📥', key: msg.key } })
+      await sock.sendMessage(from, { text: 'estoy descargando su audio, tenga paciencia.' }, { quoted: msg })
 
-      const { buffer, title: finalTitle, sizeMB } = await downloadAudio(videoUrl)
-      title = finalTitle || title
+      const dl = await fetch(data.datos.url, {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
+        },
+        redirect: 'follow',
+      })
 
-      await sock.sendMessage(from, { react: { text: '📤', key: msg.key } })
-
-      if (sizeMB <= 80) {
-        await sock.sendMessage(from, {
-          audio: buffer,
-          mimetype: 'audio/mpeg',
-          fileName: `${title}.mp3`
-        }, { quoted: msg })
-      } else {
-        await sock.sendMessage(from, {
-          document: buffer,
-          mimetype: 'audio/mpeg',
-          fileName: `${title}.mp3`,
-          caption: `*${title}*\nEl audio pesa más de lo que puedo mandar como audio normal, así que te lo paso como documento. No es lo ideal, pero es lo que hay.`
-        }, { quoted: msg })
+      if (!dl.ok) {
+        await sock.sendMessage(from, { text: 'falló la descarga... no es mi culpa, ¿eh?' }, { quoted: msg })
+        return
       }
 
-      await sock.sendMessage(from, { react: { text: '🌴', key: msg.key } })
+      const buffer = Buffer.from(await dl.arrayBuffer())
+      const fileName = data.datos.archivo || `${data.titulo || 'audio'}.mp3`
+
+      await sock.sendMessage(from, {
+        document: buffer,
+        mimetype: 'audio/mpeg',
+        fileName,
+      }, { quoted: msg })
+
+      await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
 
     } catch {
-      await sock.sendMessage(from, {
-        text: 'No pude descargar eso, y no es por falta de ganas. Probé todo lo que tenía y nada funcionó.'
-      }, { quoted: msg })
-    } finally {
-      clearTimeout(descargaTimeouts.get(userId))
-      descargaTimeouts.delete(userId)
-      descargando.delete(userId)
+      await sock.sendMessage(from, { text: global.messages.error }, { quoted: msg })
     }
   }
 }

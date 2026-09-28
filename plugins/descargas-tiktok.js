@@ -1,102 +1,74 @@
-import axios from 'axios'
-
 export default {
-  command:   ['tiktok', 'tt', 'ttdl'],
-  tag:       'tiktok',
-  categoria: 'descargas',
-  descripcion: 'Descarga videos de TikTok',
-  owner:     false,
-  group:     false,
+  command:     ['playtt', 'tt', 'tiktok'],
+  tag:         'tiktok',
+  categoria:   'descargas',
+  owner:       false,
+  group:       false,
+  descripcion: 'Descarga video de TikTok',
 
   async execute(sock, msg, { from, args }) {
-    const url = args[0]
+    await sock.sendMessage(from, { react: { text: global.getRandomReaction('media'), key: msg.key } })
 
-    if (!url) {
-      await sock.sendMessage(from, {
-        text: '¿Y se supone que tengo que adivinar el enlace o qué? Pásamelo y dejo de hacerte esperar.'
-      }, { quoted: msg })
+    if (!args.length) {
+      await sock.sendMessage(from, { text: 'debes ingresar el link de TikTok.' }, { quoted: msg })
       return
     }
 
-    if (!url.includes('tiktok.com') && !url.includes('vt.tiktok.com')) {
-      await sock.sendMessage(from, {
-        text: 'Eso no es un enlace de TikTok. No me hagas perder el tiempo, pásame algo que sirva.'
-      }, { quoted: msg })
+    const input = args.join(' ').trim()
+    if (!/tiktok\.com|vt\.tiktok\.com/i.test(input)) {
+      await sock.sendMessage(from, { text: 'eso no parece un link de TikTok... ¿seguro que lo copiaste bien?' }, { quoted: msg })
       return
     }
-
-    await sock.sendMessage(from, { react: { text: '🔎', key: msg.key } })
 
     try {
-      const apiUrl = `https://api.lempi.lat/dl/tiktok?url=${encodeURIComponent(url)}&apikey=lem851`
-      const { data } = await axios.get(apiUrl, { timeout: 30000 })
+      const apiKey = 'lem_c92ba8f5ed716cd9d1ba968623728690dc706dcb'
+      const api = `https://api.lempi.lat/dl/tiktok?url=${encodeURIComponent(input)}&apikey=${apiKey}`
 
-      if (!data.status || !data.resultado) {
-        await sock.sendMessage(from, {
-          text: 'No pude descargar eso, y no es por falta de ganas. Revisa el enlace y dime si de verdad funciona.'
-        }, { quoted: msg })
+      const res = await fetch(api, { headers: { 'content-type': 'application/json' } })
+
+      if (!res.ok) {
+        await sock.sendMessage(from, { text: 'la api no respondió bien... inténtalo luego.' }, { quoted: msg })
         return
       }
 
-      const resultado = data.resultado
+      const data = await res.json()
 
-      if (resultado.tipo === 'imagen' && resultado.imagenes?.length) {
-        await sock.sendMessage(from, { react: { text: '📥', key: msg.key } })
-
-        for (const img of resultado.imagenes) {
-          const imgRes = await axios.get(img, { responseType: 'arraybuffer', timeout: 60000 })
-          await sock.sendMessage(from, {
-            image: Buffer.from(imgRes.data),
-            caption: `${resultado.titulo || ''}`
-          }, { quoted: msg })
-        }
-
-        await sock.sendMessage(from, { react: { text: '🌴', key: msg.key } })
+      if (!data.status || !data.datos?.url) {
+        await sock.sendMessage(from, { text: 'no encontré el video... qué fastidio.' }, { quoted: msg })
         return
       }
 
-      const videoUrl = resultado.video?.sin_marca_agua || resultado.video?.hd || resultado.video?.con_marca_agua
+      await sock.sendMessage(from, { text: 'estoy descargando su video, tenga paciencia.' }, { quoted: msg })
 
-      if (!videoUrl) {
-        await sock.sendMessage(from, {
-          text: 'No encontré video en ese enlace. ¿Seguro que no es otra cosa?'
-        }, { quoted: msg })
-        return
-      }
-
-      await sock.sendMessage(from, { react: { text: '📥', key: msg.key } })
-
-      const videoRes = await axios.get(videoUrl, {
-        responseType: 'arraybuffer',
-        timeout: 120000
+      const dl = await fetch(data.datos.url, {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36',
+        },
       })
-      const videoBuffer = Buffer.from(videoRes.data)
-      const sizeMB = videoBuffer.length / (1024 * 1024)
 
-      await sock.sendMessage(from, { react: { text: '📤', key: msg.key } })
-
-      const caption = `*${resultado.titulo || 'Sin título'}*\n*Usuario:* ${resultado.autor?.nombre || 'Desconocido'} (@${resultado.autor?.usuario || 'N/A'})\n*Likes:* ${resultado.me_gusta?.toLocaleString() || 0} | *Comentarios:* ${resultado.comentarios?.toLocaleString() || 0} | *Compartidos:* ${resultado.compartidos?.toLocaleString() || 0}`
-
-      if (sizeMB <= 50) {
-        await sock.sendMessage(from, {
-          video: videoBuffer,
-          caption: caption
-        }, { quoted: msg })
-      } else {
-        await sock.sendMessage(from, {
-          document: videoBuffer,
-          mimetype: 'video/mp4',
-          fileName: `tiktok_${Date.now()}.mp4`,
-          caption: `${caption}\nEl video pesa más de lo que puedo mandar como video normal, así que te lo paso como documento. No es lo ideal, pero es lo que hay.`
-        }, { quoted: msg })
+      if (!dl.ok) {
+        await sock.sendMessage(from, { text: 'falló la descarga... no es mi culpa, ¿eh?' }, { quoted: msg })
+        return
       }
 
-      await sock.sendMessage(from, { react: { text: '🌴', key: msg.key } })
+      const buffer = Buffer.from(await dl.arrayBuffer())
+      const mb = buffer.length / (1024 * 1024)
+
+      if (mb > 80) {
+        await sock.sendMessage(from, { text: `el video pesa ${mb.toFixed(1)}MB, es demasiado grande para enviarlo por aquí.` }, { quoted: msg })
+        return
+      }
+
+      await sock.sendMessage(from, {
+        video: buffer,
+        mimetype: 'video/mp4',
+        fileName: data.datos.archivo || `tiktok_${Date.now()}.mp4`,
+      }, { quoted: msg })
+
+      await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
 
     } catch {
-      await sock.sendMessage(from, {
-        text: 'No pude descargar eso, y no es por falta de ganas. Revisa el enlace y dime si de verdad funciona.'
-      }, { quoted: msg })
+      await sock.sendMessage(from, { text: global.messages.error }, { quoted: msg })
     }
   }
 }
