@@ -1,73 +1,23 @@
 // plugins/setperfil.js
-import { getUser, setUserField } from '../core/sqlite.js'
-import { getRealJid, cleanNumber } from '../utils/jid.js'
+import { setUserField, ensureRegistered } from '../core/sqlite.js'
+import { getRealJid, cleanNumber }        from '../utils/jid.js'
 
-const sesiones = new Map()
+const GENEROS = ['hombre', 'mujer', 'prefiero no decir']
+const GENERO_DISPLAY = { hombre: 'Hombre', mujer: 'Mujer', 'prefiero no decir': 'Prefiero no decir' }
 
-const GENEROS = ['Hombre', 'Mujer', 'Prefiero no decir']
+const DIAS_MES = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-const PAISES = [
-  'Belice', 'Costa Rica', 'El Salvador', 'Guatemala', 'Honduras',
-  'Nicaragua', 'Panamá', 'México', 'Estados Unidos', 'Canadá',
-  'Cuba', 'Haití', 'República Dominicana', 'Jamaica', 'Puerto Rico',
-  'Argentina', 'Bolivia', 'Brasil', 'Chile', 'Colombia',
-  'Ecuador', 'Paraguay', 'Perú', 'Uruguay', 'Venezuela',
-  'España', 'Portugal', 'Francia', 'Italia', 'Alemania',
-  'Reino Unido', 'Suiza', 'Suecia', 'Noruega', 'Otro'
-]
-
-const CAMPOS = ['nombre', 'apodo', 'edad', 'frase', 'color', 'animal', 'genero', 'pais']
-
-const ETIQUETAS = {
-  nombre: 'Nombre',
-  apodo:  'Apodo',
-  edad:   'Edad',
-  frase:  'Frase',
-  color:  'Color favorito',
-  animal: 'Animal favorito',
-  genero: 'Género',
-  pais:   'País',
+function validarCumple(valor) {
+  const m = valor.match(/^(\d{1,2})-(\d{1,2})$/)
+  if (!m) return null
+  const dia = parseInt(m[1], 10)
+  const mes = parseInt(m[2], 10)
+  if (mes < 1 || mes > 12) return null
+  if (dia < 1 || dia > DIAS_MES[mes - 1]) return null
+  return `${String(dia).padStart(2, '0')}-${String(mes).padStart(2, '0')}`
 }
 
-const PREGUNTAS = {
-  nombre: '¿Cuál será tu nuevo nombre?',
-  apodo:  '¿Qué apodo quieres tener?',
-  edad:   '¿Cuántos años tienes? Debe ser entre 13 y 60.',
-  frase:  '¿Qué frase quieres poner en tu perfil?',
-  color:  '¿Cuál es tu color favorito?',
-  animal: '¿Cuál es tu animal favorito?',
-  genero: `¿Con qué género te identificas?\n\n${GENEROS.map((g, i) => `  ${i + 1}. ${g}`).join('\n')}`,
-  pais:   `¿De qué país eres?\n\n${PAISES.map((p, i) => `  ${i + 1}. ${p}`).join('\n')}`,
-}
-
-function mostrarValor(perfil, campo) {
-  const val = perfil?.[campo]
-  if (!val || val === '' || val === 0) return '_aún no has puesto nada_'
-  if (campo === 'edad') return `_${val} años_`
-  return `_${val}_`
-}
-
-function construirMenu(perfil) {
-  let txt = `⚙️ *Editar perfil*\n\n`
-  CAMPOS.forEach((campo, i) => {
-    txt += `  ${i + 1}. *${ETIQUETAS[campo]}*\n`
-    txt += `  > ↳ ${mostrarValor(perfil, campo)}\n\n`
-  })
-  txt += `Escribe el número del campo que quieres editar o *cancelar* para salir.`
-  return txt
-}
-
-function resetearInactividad(userNum) {
-  const sesion = sesiones.get(userNum)
-  if (sesion && sesion.timeout) {
-    clearTimeout(sesion.timeout)
-  }
-  if (sesion) {
-    sesion.timeout = setTimeout(() => {
-      sesiones.delete(userNum)
-    }, 3 * 60 * 1000)
-  }
-}
+const CAMPOS = ['nombre', 'apodo', 'edad', 'genero', 'titulo', 'cumple', 'frase', 'color', 'animal']
 
 export default {
   command:     ['setperfil', 'editarperfil'],
@@ -78,138 +28,100 @@ export default {
   nsfw:        false,
   descripcion: 'Personaliza tu perfil',
 
-  async onMessage(sock, msg, { from, text, sender }) {
-    if (from.endsWith('@g.us')) return
-
-    const selfJid = await getRealJid(sock, sender, msg).catch(() => sender)
-    const userNum = cleanNumber(selfJid)
-
-    const sesion = sesiones.get(userNum)
-    if (!sesion) return
-
-    // Escudo: Si el ID de este mensaje coincide con el bloqueado, lo ignoramos por completo
-    if (sesion.lockMsgId && sesion.lockMsgId === msg.key?.id) return
-
-    const respuestaOriginal = text?.trim()
-    const respuesta         = respuestaOriginal?.toLowerCase()
-    if (!respuesta) return
-
-    if (respuesta === 'cancelar') {
-      if (sesion.timeout) clearTimeout(sesion.timeout)
-      sesiones.delete(userNum)
-      await sock.sendMessage(from, {
-        text: 'Cuando quieras volver a editar tu perfil, aquí estaré.'
-      }, { quoted: msg })
-      return
-    }
-
-    resetearInactividad(userNum)
-
-    // ── Esperando número de campo ─────────────────────────────────────────────
-    if (sesion.paso === 'menu') {
-      const idx = parseInt(respuesta) - 1
-      if (isNaN(idx) || idx < 0 || idx >= CAMPOS.length) return
-
-      sesion.campo     = CAMPOS[idx]
-      sesion.paso      = 'editar'
-      sesion.lockMsgId = msg.key?.id // Bloqueamos para que no entre en la edición de inmediato
-
-      await sock.sendMessage(from, { text: PREGUNTAS[sesion.campo] }, { quoted: msg })
-      return 
-    }
-
-    // ── Editando campo ────────────────────────────────────────────────────────
-    if (sesion.paso === 'editar') {
-      const campo = sesion.campo
-      let valor   = campo === 'nombre' || campo === 'apodo' ? respuestaOriginal : respuesta
-
-      if (campo === 'edad') {
-        const edad = parseInt(respuesta)
-        if (isNaN(edad) || edad < 13 || edad > 60) return
-        valor = edad
-      }
-
-      if (campo === 'nombre') {
-        if (respuestaOriginal.length < 2 || respuestaOriginal.length > 30) {
-          await sock.sendMessage(from, {
-            text: 'El nombre debe tener entre 2 y 30 caracteres, ni tan corto ni tan largo.'
-          }, { quoted: msg })
-          return
-        }
-      }
-
-      if (campo === 'apodo') {
-        if (respuestaOriginal.length > 25) {
-          await sock.sendMessage(from, {
-            text: 'El apodo es muy largo, máximo 25 caracteres.'
-          }, { quoted: msg })
-          return
-        }
-      }
-
-      if (campo === 'genero') {
-        const idx = parseInt(respuesta) - 1
-        if (isNaN(idx) || idx < 0 || idx >= GENEROS.length) return
-        valor = GENEROS[idx]
-      }
-
-      if (campo === 'pais') {
-        const idx = parseInt(respuesta) - 1
-        if (isNaN(idx) || idx < 0 || idx >= PAISES.length) return
-        valor = PAISES[idx]
-      }
-
-      await setUserField(userNum, campo, valor)
-      
-      // Bloqueamos este mismo mensaje para que al pasar a 'menu' no se auto-seleccione ninguna opción
-      sesion.lockMsgId = msg.key?.id 
-
-      const confirmaciones = {
-        nombre: `Listo, ahora te llamas *${valor}*.`,
-        apodo:  `Apodo actualizado: *${valor}*.`,
-        edad:   `Edad guardada: *${valor} años*.`,
-        frase:  `Tu frase quedó así: _${valor}_`,
-        color:  `Color favorito: *${valor}*.`,
-        animal: `Animal favorito: *${valor}*.`,
-        genero: `Género: *${valor}*.`,
-        pais:   `País: *${valor}*.`,
-      }
-
-      await sock.sendMessage(from, { text: confirmaciones[campo] }, { quoted: msg })
-
-      sesion.paso  = 'menu'
-      sesion.campo = null
-
-      const perfil = await getUser(userNum)
-      await sock.sendMessage(from, { text: construirMenu(perfil) }, { quoted: msg })
-      return
-    }
-  },
-
-  async execute(sock, msg, { from, sender, isGroup }) {
+  async execute(sock, msg, { from, args, sender, isGroup }) {
     if (isGroup) {
-      await sock.sendMessage(from, {
+      return sock.sendMessage(from, {
         text: 'Eso mejor lo hacemos en privado, no todo el grupo necesita saber tu información. Escríbeme por aquí y lo resolvemos.'
       }, { quoted: msg })
-      return
     }
 
-    const selfJid = await getRealJid(sock, sender, msg).catch(() => sender)
-    const selfNum = cleanNumber(selfJid)
+    const realJid = await getRealJid(sock, sender, msg).catch(() => sender)
+    const userNum = cleanNumber(realJid)
+    if (userNum) ensureRegistered(userNum, msg.pushName)
 
-    if (sesiones.has(selfNum)) {
-      const perfil = await getUser(selfNum)
-      resetearInactividad(selfNum)
-      await sock.sendMessage(from, {
-        text: `Ya tienes una edición en marcha. Aquí va el menú por si lo perdiste.\n\n${construirMenu(perfil)}`
+    if (!args.length) {
+      return sock.sendMessage(from, {
+        text: '¿Quieres que te conozca mejor? Puedo guardar tu nombre, apodo, edad, género, un título tuyo, tu cumpleaños, una frase, tu color y tu animal favorito — lo que tú quieras, cuando quieras.\n\nSi algún día quieres contarme alguna, así de fácil: .setperfil y el dato, por ejemplo .setperfil frase la vida es corta. Yo lo voy guardando, no hay ningún orden que seguir.'
       }, { quoted: msg })
-      return
     }
 
-    const perfil = await getUser(selfNum)
-    sesiones.set(selfNum, { paso: 'menu', campo: null, lockMsgId: null })
-    resetearInactividad(selfNum)
+    const campo = args[0].toLowerCase()
+    const valor = args.slice(1).join(' ').trim()
 
-    await sock.sendMessage(from, { text: construirMenu(perfil) })
+    if (!CAMPOS.includes(campo)) {
+      return sock.sendMessage(from, {
+        text: '¿Eso qué es? No tengo ningún dato que se llame así. Prueba con nombre, apodo, edad, genero, titulo, cumple, frase, color o animal.'
+      }, { quoted: msg })
+    }
+
+    if (!valor) {
+      return sock.sendMessage(from, {
+        text: '¿Y qué le pongo? Te faltó decirme el valor.'
+      }, { quoted: msg })
+    }
+
+    let final = valor
+
+    if (campo === 'edad') {
+      const edad = parseInt(valor, 10)
+      if (isNaN(edad) || edad < 13 || edad > 60) {
+        return sock.sendMessage(from, {
+          text: 'Esa no es una edad real, o no te voy a creer. Dame un número entre 13 y 60.'
+        }, { quoted: msg })
+      }
+      final = edad
+    }
+
+    if (campo === 'genero') {
+      const norm = valor.toLowerCase()
+      if (!GENEROS.includes(norm)) {
+        return sock.sendMessage(from, {
+          text: 'Esa opción no existe. Elige entre hombre, mujer o prefiero no decir.'
+        }, { quoted: msg })
+      }
+      final = GENERO_DISPLAY[norm]
+    }
+
+    if (campo === 'cumple') {
+      const fecha = validarCumple(valor)
+      if (!fecha) {
+        return sock.sendMessage(from, {
+          text: 'Esa fecha no me cuadra. Dámela como día-mes, por ejemplo 14-02.'
+        }, { quoted: msg })
+      }
+      final = fecha
+    }
+
+    if (campo === 'nombre') {
+      if (valor.length < 2 || valor.length > 30) {
+        return sock.sendMessage(from, {
+          text: 'Ese nombre no me sirve, dame algo entre 2 y 30 caracteres.'
+        }, { quoted: msg })
+      }
+    }
+
+    if (campo === 'apodo') {
+      if (valor.length > 25) {
+        return sock.sendMessage(from, {
+          text: 'Ese apodo es casi un poema. Máximo 25 caracteres.'
+        }, { quoted: msg })
+      }
+    }
+
+    setUserField(userNum, campo, final)
+
+    const confirmaciones = {
+      nombre: `Listo, ahora te llamas *${final}*.`,
+      apodo:  `Apodo actualizado: *${final}*.`,
+      edad:   `Edad guardada: *${final} años*.`,
+      genero: `Género: *${final}*.`,
+      titulo: `Tu nuevo título: *${final}*.`,
+      cumple: `Anotado, cumples el *${final}*.`,
+      frase:  `Tu frase quedó así: _${final}_`,
+      color:  `Color favorito: *${final}*.`,
+      animal: `Animal favorito: *${final}*.`,
+    }
+
+    await sock.sendMessage(from, { text: confirmaciones[campo] }, { quoted: msg })
   }
 }

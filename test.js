@@ -2,8 +2,11 @@
 import readline from 'node:readline/promises'
 import { stdin as input, stdout as output } from 'node:process'
 
-const BASE = 'https://spotsaver.net'
-const COOKIE = '__cf_bm=qW81c27w3CxcwM3bq4KFOAGzNI44hiPXfYAsVYo9pZw-1790612006.501612-1.0.1.1-5jlDVeWIRgrdq7.ne1mLUJdVtAKVZVh0p6kapLTiHhGPAQQygb197VTF4KyE0ne.PPuSut2dtx3Wy4LS7fGNHCf6hMQWw75x73Fz8mK_J3FxXK4aqLv.S8dUWCwNkIBD'
+const API_KEY = 'b69e9ac84c9c5f8a9f265c337a9005f3'
+const AUTH_URL = 'https://gamma.gammacloud.net/api/v1/auth'
+const INIT_URL = 'https://gamma.gammacloud.net/api/v1/init'
+const MAX_INTENTOS_PROGRESS = 60
+const DELAY_PROGRESS_MS = 2000
 
 async function fetchConReintentos(url, opciones = {}, intentos = 3) {
   for (let i = 1; i <= intentos; i++) {
@@ -19,138 +22,144 @@ async function fetchConReintentos(url, opciones = {}, intentos = 3) {
   return null
 }
 
-async function main() {
-  const rl = readline.createInterface({ input, output })
-
-  const headersBase = {
+function headersBase(referer = 'https://ytmp3.gl/') {
+  return {
     'user-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
     'accept': '*/*',
     'accept-language': 'es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3',
-    'referer': BASE + '/results/',
-    'origin': BASE,
-    'cookie': COOKIE
+    'referer': referer,
+    'origin': 'https://ytmp3.gl'
   }
+}
 
-  const query = await rl.question('Buscar: ')
-  if (!query.trim()) {
-    console.log('Búsqueda vacía.')
-    rl.close()
-    return
-  }
+async function main() {
+  const rl = readline.createInterface({ input, output })
 
-  console.log('\nBuscando...')
-  const searchRes = await fetchConReintentos(
-    `${BASE}/api/spotify/?q=${encodeURIComponent(query)}`,
-    { headers: headersBase }
-  )
-  if (!searchRes) {
-    console.log('Falló la búsqueda.')
-    rl.close()
-    return
-  }
+  const entrada = await rl.question('URL o ID de YouTube [default: vWtJJRTqVSI]: ')
+  const idInput = entrada.trim() || 'https://www.youtube.com/watch?v=vWtJJRTqVSI'
 
-  const searchData = await searchRes.json()
-  console.log('Claves de respuesta:', Object.keys(searchData))
+  const ytRegex = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+  const match = idInput.match(ytRegex)
+  const videoId = match ? match[1] : idInput.trim()
 
-  const resultados =
-    searchData?.items ||
-    searchData?.results ||
-    searchData?.tracks ||
-    searchData?.canciones ||
-    (Array.isArray(searchData) ? searchData : null)
+  console.log('Video ID:', videoId)
 
-  if (!resultados || !resultados.length) {
-    console.log('No encontré resultados. Estructura:')
-    console.log(JSON.stringify(searchData, null, 2).slice(0, 800))
-    rl.close()
-    return
-  }
-
-  resultados.slice(0, 10).forEach((r, i) => {
-    const t = r.title || r.titulo || r.name || '?'
-    const a = r.artist || r.artista || (r.artists?.[0]?.name) || ''
-    console.log(`${i + 1}. ${t}${a ? ' - ' + a : ''}`)
+  console.log('\n[1/6] auth...')
+  const authRes = await fetchConReintentos(`${AUTH_URL}?api_key=${API_KEY}&_=${Date.now()}`, {
+    headers: headersBase()
   })
+  const authData = authRes ? await authRes.json() : null
+  console.log('respuesta:', authData)
 
-  const sel = await rl.question('\nElige número (1-10): ')
-  const idx = parseInt(sel) - 1
-  const elegido = resultados[idx]
-  if (!elegido) {
-    console.log('Selección inválida.')
+  if (!authData?.key) {
+    console.log('Sin key.')
     rl.close()
     return
   }
 
-  const titulo = elegido.title || elegido.titulo || elegido.name
-  const artista = elegido.artist || elegido.artista || (elegido.artists?.[0]?.name) || ''
-  console.log(`\nElegido: ${titulo} - ${artista}`)
-
-  console.log('\nObteniendo videoId...')
-  const idRes = await fetchConReintentos(`${BASE}/api/get-id/`, {
-    method: 'POST',
-    headers: { ...headersBase, 'content-type': 'application/json' },
-    body: JSON.stringify({ title: titulo, artist: artista })
+  console.log('\n[2/6] init...')
+  const initRes = await fetchConReintentos(`${INIT_URL}?_=${Date.now()}`, {
+    headers: { ...headersBase(), 'authorization': `Bearer ${authData.key}` }
   })
-  if (!idRes) {
-    console.log('Falló get-id.')
-    rl.close()
-    return
-  }
-  const idData = await idRes.json()
-  console.log('get-id:', idData)
-  const videoId = idData?.videoId
-  if (!videoId) {
-    console.log('Sin videoId.')
+  const initData = initRes ? await initRes.json() : null
+  console.log('convertURL base:', initData?.convertURL ? 'ok' : 'falta')
+
+  if (!initData?.convertURL) {
+    console.log('Sin convertURL.')
     rl.close()
     return
   }
 
-  console.log('\nSolicitando descarga...')
-  const dlRes = await fetchConReintentos(`${BASE}/api/download/`, {
-    method: 'POST',
-    headers: { ...headersBase, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      videoId,
-      candidateIds: [],
-      format: 'mp3',
-      title: `${titulo} - ${artista}`,
-      licenseKey: null
+  const primeraConvertUrl = `${initData.convertURL}&v=${videoId}&f=mp4&_=${Date.now()}`
+  console.log('\n[3/6] convert (1)...')
+  const conv1Res = await fetchConReintentos(primeraConvertUrl, {
+    headers: headersBase()
+  })
+  const conv1Data = conv1Res ? await conv1Res.json() : null
+
+  let downloadURL = conv1Data?.downloadURL
+  let progressURL = conv1Data?.progressURL
+  let titulo = conv1Data?.title || ''
+
+  if (!downloadURL && conv1Data?.redirectURL) {
+    const segundaUrl = conv1Data.redirectURL.includes('_=')
+      ? conv1Data.redirectURL
+      : `${conv1Data.redirectURL}&_=${Date.now()}`
+
+    console.log('\n[4/6] convert (2 — redirect)...')
+    const conv2Res = await fetchConReintentos(segundaUrl, {
+      headers: headersBase()
     })
-  })
-  if (!dlRes) {
-    console.log('Falló download.')
+    const conv2Data = conv2Res ? await conv2Res.json() : null
+
+    downloadURL = conv2Data?.downloadURL
+    progressURL = conv2Data?.progressURL
+    titulo = conv2Data?.title || titulo
+  }
+
+  // Polling: esperar a progress === 3
+  if (progressURL) {
+    console.log('\n[5/6] esperando conversión (hasta progress=3)...')
+
+    for (let i = 1; i <= MAX_INTENTOS_PROGRESS; i++) {
+      await new Promise(r => setTimeout(r, DELAY_PROGRESS_MS))
+
+      const progUrl = progressURL.includes('_=')
+        ? progressURL
+        : `${progressURL}&_=${Date.now()}`
+
+      const progRes = await fetchConReintentos(progUrl, { headers: headersBase() })
+      if (!progRes) continue
+
+      const progData = await progRes.json().catch(() => null)
+      console.log(`  intento ${i}:`, progData)
+
+      if (progData?.title) titulo = progData.title
+
+      if (progData?.progress === 3) {
+        console.log('  → listo')
+        break
+      }
+    }
+  }
+
+  if (!downloadURL) {
+    console.log('Sin downloadURL final.')
     rl.close()
     return
   }
-  const dlData = await dlRes.json()
-  console.log('download:', dlData)
 
-  const mediaUrl = dlData?.mediaUrl || dlData?.url || dlData?.downloadUrl
-  if (!mediaUrl) {
-    console.log('Sin URL de audio.')
-    rl.close()
-    return
-  }
+  if (!titulo) titulo = 'video'
 
-  console.log('\nDescargando buffer...')
-  const audioRes = await fetchConReintentos(mediaUrl, {
+  console.log('\n[6/6] descargando...')
+
+  // Aseguramos que la URL tenga &r=ytmp3.gl
+  const finalUrl = downloadURL.includes('r=ytmp3.gl')
+    ? downloadURL
+    : `${downloadURL}&r=ytmp3.gl`
+
+  const dlRes = await fetchConReintentos(finalUrl, {
     headers: {
       'user-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
       'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'referer': BASE + '/',
-      'cookie': COOKIE
+      'referer': 'https://ytmp3.gl/'
     },
     redirect: 'follow'
   })
-  if (!audioRes) {
-    console.log('Falló la descarga del audio.')
+
+  if (!dlRes) {
+    console.log('Falló la descarga.')
     rl.close()
     return
   }
 
-  const buf = Buffer.from(await audioRes.arrayBuffer())
+  console.log('Status:', dlRes.status)
+  console.log('Content-Type:', dlRes.headers.get('content-type'))
+  console.log('Content-Length:', dlRes.headers.get('content-length'))
+
+  const buf = Buffer.from(await dlRes.arrayBuffer())
   console.log(`Buffer recibido: ${buf.length} bytes`)
-  console.log('Content-Type:', audioRes.headers.get('content-type'))
+  console.log('Título:', titulo)
 
   rl.close()
 }

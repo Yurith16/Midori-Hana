@@ -4,7 +4,8 @@ import { checkSpam }               from '../utils/spam.js'
 import { commands, messageListeners } from './plugins.js'
 import {
   getGroup, isMuted, isBanned, muteUser, unmuteUser,
-  trackActivity, updateGroupName, saveMsg, isIgnored
+  trackActivity, updateGroupName, saveMsg, isIgnored,
+  marcarActividad
 } from './sqlite.js'
 import { isToxic, getToxicResponse, addWarning, clearWarnings } from '../utils/toxic.js'
 
@@ -233,6 +234,8 @@ async function dispatch(ctx, sock, msg, match) {
   if (ctx.isGroup && !ctx.isOwner && !ctx.isAdmin && isIgnored(ctx.from, ctx.userNum)) return
 
   logger.cmd(cmdName, ctx.userNum, ctx.isGroup ? ctx.groupCfg?.name : null)
+
+  if (ctx.userNum) marcarActividad(ctx.userNum)
 
   await delay()
   await cmd.execute(sock, msg, { ...ctx, args, prefix: match.prefix }).catch(err => {

@@ -6,8 +6,11 @@ import { getRealJid, cleanNumber } from '../utils/jid.js'
 import { resolveTarget } from '../utils/target.js'
 import { toMono } from '../utils/helpers.js'
 
-const PERFIL_DEFAULT_IMG = 'https://www.image2url.com/r2/default/images/1780714746057-12c23aaf-4846-4012-b243-4d4f3bb09b4e.png'
+const PERFIL_DEFAULT_IMG = './media/perfil.png'
 const BULLETS = ['🐞', '📍', '🐝']
+const VACIO   = '─'
+
+const CAMPOS_OPCIONALES = ['apodo', 'edad', 'genero', 'titulo', 'cumple', 'frase', 'color', 'animal']
 
 function formatDate(timestamp) {
   if (!timestamp || timestamp === 0) return null
@@ -18,11 +21,39 @@ function formatDate(timestamp) {
   return `${dia}/${mes}/${año}`
 }
 
+function tiempoTranscurrido(timestamp) {
+  if (!timestamp) return null
+  const diff = Math.floor(Date.now() / 1000) - timestamp
+  if (diff < 60)    return 'justo ahora'
+  const min = Math.floor(diff / 60)
+  if (min < 60)     return `hace ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24)       return `hace ${h}h`
+  const d = Math.floor(h / 24)
+  if (d < 30)       return `hace ${d} día${d > 1 ? 's' : ''}`
+  const mo = Math.floor(d / 30)
+  if (mo < 12)      return `hace ${mo} mes${mo > 1 ? 'es' : ''}`
+  const y = Math.floor(mo / 12)
+  return `hace ${y} año${y > 1 ? 's' : ''}`
+}
+
 function esFotoValida(str) {
   if (!str) return false
   if (str.startsWith('http://') || str.startsWith('https://')) return 'url'
   if (fs.existsSync(str)) return 'local'
   return false
+}
+
+function estaVacio(val) {
+  return val === undefined || val === null || val === '' || val === 0
+}
+
+function linea(perfil, key, label, bullet, esPropio, formatter = v => v) {
+  const val = perfil[key]
+  if (estaVacio(val)) {
+    return esPropio ? `> │ ${bullet} *${label}* · ${VACIO}\n` : ''
+  }
+  return `> │ ${bullet} *${label}* · ${formatter(val)}\n`
 }
 
 export default {
@@ -53,23 +84,34 @@ export default {
       }, { quoted: msg })
     }
 
-    const bullet = BULLETS[Math.floor(Math.random() * BULLETS.length)]
+    const esPropio = !target?.num
+    const bullet   = BULLETS[Math.floor(Math.random() * BULLETS.length)]
 
     let txt = `> ╭─〔 🌸 *Esencia* 🌸 〕\n`
 
     txt += `> │ ${bullet} *Nombre* · ${perfil.nombre}\n`
-    if (perfil.apodo)  txt += `> │ ${bullet} *Apodo* · ${perfil.apodo}\n`
-    if (perfil.edad)   txt += `> │ ${bullet} *Edad* · ${perfil.edad} años\n`
-    if (perfil.genero) txt += `> │ ${bullet} *Género* · ${perfil.genero}\n`
-    if (perfil.pais)   txt += `> │ ${bullet} *País* · ${perfil.pais}\n`
-    if (perfil.registered_at) txt += `> │ ${bullet} *Registrado* · ${formatDate(perfil.registered_at)}\n`
+    txt += linea(perfil, 'apodo',  'Apodo',      bullet, esPropio)
+    txt += linea(perfil, 'edad',   'Edad',       bullet, esPropio, v => `${v} años`)
+    txt += linea(perfil, 'genero', 'Género',     bullet, esPropio)
+    txt += linea(perfil, 'titulo', 'Título',     bullet, esPropio)
+    txt += linea(perfil, 'cumple', 'Cumpleaños', bullet, esPropio)
 
-    if (perfil.frase || perfil.color || perfil.animal) {
-      if (perfil.frase)  txt += `> │ ${bullet} *Frase* · _${perfil.frase}_\n`
-      if (perfil.color)  txt += `> │ ${bullet} *Color* · ${perfil.color}\n`
-      if (perfil.animal) txt += `> │ ${bullet} *Animal* · ${perfil.animal}\n`
-    } else {
-      txt += `> │ ${bullet} *Frase* · _Usuario de Midori-Hana_\n`
+    if (perfil.registered_at) {
+      txt += `> │ ${bullet} *Registrado* · ${formatDate(perfil.registered_at)}\n`
+    }
+    if (perfil.ultima_actividad) {
+      txt += `> │ ${bullet} *Última actividad* · ${tiempoTranscurrido(perfil.ultima_actividad)}\n`
+    }
+
+    txt += linea(perfil, 'frase',  'Frase',  bullet, esPropio, v => `_${v}_`)
+    txt += linea(perfil, 'color',  'Color',  bullet, esPropio)
+    txt += linea(perfil, 'animal', 'Animal', bullet, esPropio)
+
+    if (esPropio) {
+      const faltan = CAMPOS_OPCIONALES.filter(c => estaVacio(perfil[c])).length
+      if (faltan > 0) {
+        txt += `> │\n> │ _Me debes ${faltan} dato${faltan > 1 ? 's' : ''} todavía. No te apures, te espero._\n`
+      }
     }
 
     txt += `> ╰─── ${toMono(global.bot?.name || 'Midori-Hana')}`
