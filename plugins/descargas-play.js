@@ -1,4 +1,6 @@
 import ytSearch from 'yt-search'
+import axios from 'axios'
+import sharp from 'sharp'
 
 const API_KEY = 'b69e9ac84c9c5f8a9f265c337a9005f3'
 const AUTH_URL = 'https://gamma.gammacloud.net/api/v1/auth'
@@ -46,19 +48,23 @@ export default {
     const match = input.match(ytRegex)
 
     let videoId
+    let videoInfo = null
 
     try {
       if (match) {
         videoId = match[1]
+        const search = await ytSearch(`https://www.youtube.com/watch?v=${videoId}`)
+        videoInfo = search?.videos?.[0] || null
       } else {
         const search = await ytSearch(input)
         if (!search.videos?.length) {
           await sock.sendMessage(from, { text: 'no encontré nada con ese nombre... no es que me haya esforzado mucho, ¿eh?' }, { quoted: msg })
           return
         }
-        const urlVid = search.videos[0].url.split('&')[0]
+        videoInfo = search.videos[0]
+        const urlVid = videoInfo.url.split('&')[0]
         const idMatch = urlVid.match(/v=([a-zA-Z0-9_-]{11})|youtu\.be\/([a-zA-Z0-9_-]{11})/)
-        videoId = idMatch?.[1] || idMatch?.[2] || search.videos[0].videoId
+        videoId = idMatch?.[1] || idMatch?.[2] || videoInfo.videoId
       }
     } catch {
       await sock.sendMessage(from, { text: global.messages.error }, { quoted: msg })
@@ -70,10 +76,46 @@ export default {
       return
     }
 
-    try {
-      console.log('[play] videoId:', videoId)
+    // ─── 1) Portada + detalles ANTES ───
+    const author = videoInfo?.author?.name || 'desconocido'
+    const duration = videoInfo?.duration?.timestamp || videoInfo?.duration || '--'
+    const views = videoInfo?.views ? Number(videoInfo.views).toLocaleString() : '--'
+    const ago = videoInfo?.ago || 'desconocido'
+    const videoUrl = videoInfo?.url?.split('&')[0] || `https://youtu.be/${videoId}`
+    const thumbnail = videoInfo?.thumbnail
+    const titulo = videoInfo?.title || 'audio'
 
-      // 1) auth
+    const emojis = ['🌴', '🌱', '🦋', '🐛', '🐝']
+    const emo = emojis[0]
+
+    const detalles = `> *${titulo}*\n\n` +
+      `> ${emo} *Canal:* ${author}\n` +
+      `> ${emo} *Duración:* ${duration}\n` +
+      `> ${emo} *Vistas:* ${views}\n` +
+      `> ${emo} *Publicado:* ${ago}\n` +
+      `> ${emo} *Enlace:* ${videoUrl}`
+
+    if (thumbnail) {
+      try {
+        const thumbRes = await axios.get(thumbnail, { responseType: 'arraybuffer', timeout: 10000 })
+        const thumbBuffer = await sharp(Buffer.from(thumbRes.data))
+          .resize(480, 360)
+          .jpeg({ quality: 80 })
+          .toBuffer()
+
+        await sock.sendMessage(from, {
+          image:   thumbBuffer,
+          caption: detalles
+        }, { quoted: msg })
+      } catch {
+        await sock.sendMessage(from, { text: detalles }, { quoted: msg })
+      }
+    } else {
+      await sock.sendMessage(from, { text: detalles }, { quoted: msg })
+    }
+
+    // ─── 2) Descarga ───
+    try {
       const authRes = await fetchConReintentos(`${AUTH_URL}?api_key=${API_KEY}&_=${Date.now()}`, {
         headers: headersBase()
       })
@@ -88,9 +130,6 @@ export default {
         return
       }
 
-      console.log('[play] auth key:', authData.key)
-
-      // 2) init
       const initRes = await fetchConReintentos(`${INIT_URL}?_=${Date.now()}`, {
         headers: { ...headersBase(), 'authorization': `Bearer ${authData.key}` }
       })
@@ -105,7 +144,6 @@ export default {
         return
       }
 
-      // 3) convert (1)
       const primeraConvertUrl = `${initData.convertURL}&v=${videoId}&f=mp3&_=${Date.now()}`
       const conv1Res = await fetchConReintentos(primeraConvertUrl, {
         headers: headersBase()
@@ -117,11 +155,7 @@ export default {
 
       const conv1Data = await conv1Res.json()
       let downloadURL = conv1Data?.downloadURL
-      let titulo = conv1Data?.title || ''
 
-      console.log('[play] convert1 downloadURL:', downloadURL ? 'sí' : 'no', '| redirect:', !!conv1Data?.redirectURL)
-
-      // 4) convert (2 — redirect) si aplica
       if (!downloadURL && conv1Data?.redirectURL) {
         const segundaUrl = conv1Data.redirectURL.includes('_=')
           ? conv1Data.redirectURL
@@ -137,9 +171,6 @@ export default {
 
         const conv2Data = await conv2Res.json()
         downloadURL = conv2Data?.downloadURL
-        titulo = conv2Data?.title || titulo
-
-        console.log('[play] convert2 downloadURL:', downloadURL ? 'sí' : 'no')
       }
 
       if (!downloadURL) {
@@ -147,11 +178,6 @@ export default {
         return
       }
 
-      if (!titulo) titulo = 'audio'
-
-      await sock.sendMessage(from, { text: 'estoy descargando su audio, tenga paciencia.' }, { quoted: msg })
-
-      // 5) descarga
       const dlRes = await fetchConReintentos(downloadURL, {
         headers: {
           'user-agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
@@ -166,13 +192,7 @@ export default {
         return
       }
 
-      console.log('[play] dl status:', dlRes.status)
-      console.log('[play] dl content-length:', dlRes.headers.get('content-length'))
-      console.log('[play] dl content-type:', dlRes.headers.get('content-type'))
-
       const buffer = Buffer.from(await dlRes.arrayBuffer())
-      console.log('[play] buffer size:', buffer.length)
-
       const fileName = `${titulo}.mp3`
 
       await sock.sendMessage(from, {
@@ -181,10 +201,7 @@ export default {
         fileName
       }, { quoted: msg })
 
-      await sock.sendMessage(from, { react: { text: '✅', key: msg.key } })
-
-    } catch (e) {
-      console.log('[play] error:', e)
+    } catch {
       await sock.sendMessage(from, { text: global.messages.error }, { quoted: msg })
     }
   }
