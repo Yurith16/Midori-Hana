@@ -70,9 +70,9 @@ export default {
 
     const esPropio = !target?.num
 
-    // let txt = `> ╭─〔 🌸 *Esencia* 🌸 〕\n`
+    let txt = `> 〔 🌸 *Esencia* 🌸 〕\n`
 
-    let txt = `> ${BULLET} *Nombre* · ${perfil.nombre}\n`
+    txt += `> ${BULLET} *Nombre* · ${perfil.nombre}\n`
     txt += linea(perfil, 'edad',   'Edad',   esPropio, v => `${v} años`)
     txt += linea(perfil, 'frase',  'Frase',  esPropio, v => `_${v}_`)
     txt += linea(perfil, 'animal', 'Animal', esPropio)
