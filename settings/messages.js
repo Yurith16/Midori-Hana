@@ -3,7 +3,7 @@ const messages = {
   online:       'Ya estoy aquí, por si alguien me necesitaba. No es que me hayan extrañado, pero aquí estoy de todas formas.',
   offline:      'Me voy un momento, no prometo que sea poco tiempo. Cuídense mientras tanto.',
   reconnecting: 'Espera, me estoy reconectando. Estas cosas pasan y no está en mis manos evitarlo.',
-  maintenance:  'Hernandez me está arreglando algo, así que por ahora no estoy disponible. Vuelvo cuando él diga que estoy lista.',
+  maintenance:  'Estoy en mantenimiento para ofrecerte lo mejor de mí.',
   error:        'No me preguntes qué pasó porque yo tampoco lo entiendo del todo, pero algo salió mal. Intenta de nuevo y a ver si esta vez funciona.',
 
   // ─── Accesos ────────────────────────────────────────────────────────────────

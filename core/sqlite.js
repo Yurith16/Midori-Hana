@@ -57,19 +57,14 @@ db.exec(`
   );
 
   CREATE TABLE IF NOT EXISTS users (
-    user_num         TEXT PRIMARY KEY,
-    nombre           TEXT DEFAULT '',
-    apodo            TEXT DEFAULT '',
-    edad             INTEGER DEFAULT 0,
-    genero           TEXT DEFAULT '',
-    frase            TEXT DEFAULT '',
-    color            TEXT DEFAULT '',
-    animal           TEXT DEFAULT '',
-    foto             TEXT DEFAULT '',
-    titulo           TEXT DEFAULT '',
-    cumple           TEXT DEFAULT '',
-    ultima_actividad INTEGER DEFAULT 0,
-    registered_at    INTEGER DEFAULT (unixepoch())
+    user_num      TEXT PRIMARY KEY,
+    nombre        TEXT DEFAULT '',
+    edad          INTEGER DEFAULT 0,
+    frase         TEXT DEFAULT '',
+    animal        TEXT DEFAULT '',
+    foto          TEXT DEFAULT '',
+    kryons        INTEGER DEFAULT 0,
+    registered_at INTEGER DEFAULT (unixepoch())
   );
 `)
 
@@ -178,8 +173,7 @@ export function getBanned()     { return _getBanned.all().map(r => r.user) }
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 const _getUser      = db.prepare(`SELECT * FROM users WHERE user_num = ?`)
-const _createUser   = db.prepare(`INSERT OR IGNORE INTO users (user_num, nombre, apodo, edad, genero) VALUES (?,?,?,?,?)`)
-const _updateUser   = db.prepare(`UPDATE users SET nombre=?, apodo=?, edad=?, genero=? WHERE user_num=?`)
+const _createUser   = db.prepare(`INSERT OR IGNORE INTO users (user_num, nombre) VALUES (?,?)`)
 const _isRegistered = db.prepare(`SELECT 1 FROM users WHERE user_num = ? AND nombre != ''`)
 const _countUsers   = db.prepare(`SELECT COUNT(*) as n FROM users`)
 
@@ -187,11 +181,8 @@ export function getUser(userNum)      { return _getUser.get(userNum) }
 export function isRegistered(userNum) { return !!_isRegistered.get(userNum) }
 export function countUsers()          { return _countUsers.get()?.n || 0 }
 
-export function registerUser(userNum, { nombre, apodo, edad, genero }) {
-  _createUser.run(userNum, nombre, apodo || '', edad || 0, genero || '')
-}
-export function updateUser(userNum, { nombre, apodo, edad, genero }) {
-  _updateUser.run(nombre, apodo || '', edad, genero || '', userNum)
+export function registerUser(userNum, nombre) {
+  _createUser.run(userNum, nombre)
 }
 
 // ─── Auto-registro (solo lo disparan los comandos de perfil) ──────────────────
@@ -199,7 +190,7 @@ export function updateUser(userNum, { nombre, apodo, edad, genero }) {
 export function ensureRegistered(userNum, pushName) {
   if (isRegistered(userNum)) return
   const nombre = (pushName || '').trim().slice(0, 30) || `Alma Errante-${countUsers() + 1}`
-  registerUser(userNum, { nombre, apodo: '', edad: 0, genero: '' })
+  registerUser(userNum, nombre)
 }
 
 // ─── Perfil extendido ─────────────────────────────────────────────────────────
@@ -211,14 +202,6 @@ export function setUserField(userNum, field, value) {
 }
 export function getAge(userNum) {
   return _getUser.get(userNum)?.edad || 0
-}
-
-// ─── Actividad y cumpleaños del perfil ────────────────────────────────────────
-
-const _setUltimaActividad = db.prepare(`UPDATE users SET ultima_actividad = ? WHERE user_num = ?`)
-
-export function marcarActividad(userNum) {
-  _setUltimaActividad.run(Math.floor(Date.now() / 1000), userNum)
 }
 
 // ─── Reset global de perfiles ─────────────────────────────────────────────────
